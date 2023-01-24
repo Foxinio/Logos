@@ -1,0 +1,6 @@
+(executable
+ (public_name projekt)
+ (name main)
+ (libraries projekt))
+
+(ocamllex lexer)
