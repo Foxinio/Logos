@@ -17,94 +17,94 @@ end = struct
 
   let rec run lst = List.rev @@ Yard.init lst (eval ())
 
+  and eval_iter () =
+    logf "[Shunting_yard] called eval_iter\n";
+    let* tiktok = Yard.get_tiktok in
+    let* t = Yard.peek_token in
+    if t = EOF then Yard.return ()
+    else
+      match t with
+      | Number _ when tiktok -> Yard.return ()
+      | Number n ->
+          let* _ = Yard.read_token in
+          let* () = Yard.push_value (Number n) in
+          eval_iter ()
+      | Operator OpenBracket when tiktok -> Yard.return ()
+      | Operator OpenBracket ->
+          let* _ = Yard.read_token in
+          let* () = Yard.push_op OpenBracket in
+          eval_iter ()
+      | Operator OpenScope when tiktok -> Yard.return ()
+      | Operator OpenScope ->
+          let* _ = Yard.read_token in
+          let* () = Yard.push_assign ScopeBorder in
+          eval_iter ()
+      | Operator (Boolean Not) when tiktok -> Yard.return ()
+      | Operator (Boolean Not as op) ->
+          let* _ = Yard.read_token in
+          let* () = try_push_op op in
+          let* () = Yard.set_tiktok true in
+          eval_iter ()
+      | Operator _ when not tiktok ->
+          Yard.failwith @@ Errors.reportOperatorCumulation
+      | Operator Semi ->
+          let* _ = Yard.read_token in
+          handle_semicolon ()
+      | Operator CloseBracket ->
+          let* _ = Yard.read_token in
+          let* () = close_bracket () in
+          eval_iter ()
+      | Operator CloseScope ->
+          let* _ = Yard.read_token in
+          let* () = close_scope () in
+          eval_iter ()
+      | Operator op ->
+          let* _ = Yard.read_token in
+          let* () = try_push_op op in
+          eval_iter ()
+      | Bool _ when tiktok -> Yard.return ()
+      | Bool b ->
+          let* _ = Yard.read_token in
+          let* () = Yard.push_value (Bool b) in
+          eval_iter ()
+      | Unit when tiktok -> Yard.return ()
+      | Unit ->
+          let* _ = Yard.read_token in
+          let* () = Yard.push_value Unit in
+          eval_iter ()
+      | If when tiktok -> Yard.return ()
+      | If ->
+          let* _ = Yard.read_token in
+          let* cond = eval_one () in
+          let* then_branch = prepare () in
+          let* else_branch = prepare () in
+          let* () =
+            match cond with
+            | Bool b when b ->
+                let* res = eval_prepared then_branch in
+                Yard.push_value res
+            | Bool _ ->
+                let* res = eval_prepared else_branch in
+                Yard.push_value res
+            | _ -> Yard.failwith @@ Errors.reportTypeError "Bool" cond
+          in
+          eval_iter ()
+      | Id _ when tiktok -> Yard.return ()
+      | Id id ->
+          let* _ = Yard.read_token in
+          let* () = Yard.push_value (Id id) in
+          eval_iter ()
+      | Builtin _ when tiktok -> Yard.return ()
+      | Builtin b ->
+          let* _ = Yard.read_token in
+          let* () = eval_builtin b in
+          eval_iter ()
+      | EOF -> Yard.failwith @@ Errors.reportUnexpectedEOF None
+
   and eval () =
-    let rec iter () =
-      logf "[Shunting_yard] called iter\n";
-      let* tiktok = Yard.get_tiktok in
-      let* t = Yard.peek_token in
-      if t = EOF then Yard.return ()
-      else
-        match t with
-        | Number _ when tiktok -> Yard.return ()
-        | Number n ->
-            let* _ = Yard.read_token in
-            let* () = Yard.push_value (Number n) in
-            iter ()
-        | Operator OpenBracket when tiktok -> Yard.return ()
-        | Operator OpenBracket ->
-            let* _ = Yard.read_token in
-            let* () = Yard.push_op OpenBracket in
-            iter ()
-        | Operator OpenScope when tiktok -> Yard.return ()
-        | Operator OpenScope ->
-            let* _ = Yard.read_token in
-            let* () = Yard.push_assign ScopeBorder in
-            iter ()
-        | Operator (Boolean Not) when tiktok -> Yard.return ()
-        | Operator (Boolean Not as op) ->
-            let* _ = Yard.read_token in
-            let* () = try_push_op op in
-            iter ()
-        | Operator _ when not tiktok ->
-            Yard.failwith @@ Errors.reportOperatorCumulation
-        | Operator Semi ->
-            let* _ = Yard.read_token in
-            (* somehow fold stack *)
-            handle_semicolon ()
-        | Operator CloseBracket ->
-            let* _ = Yard.read_token in
-            let* () = close_bracket () in
-            iter ()
-        | Operator CloseScope ->
-            let* _ = Yard.read_token in
-            let* () = close_scope () in
-            iter ()
-        | Operator op ->
-            let* _ = Yard.read_token in
-            let* () = try_push_op op in
-            iter ()
-        | Bool _ when tiktok -> Yard.return ()
-        | Bool b ->
-            let* _ = Yard.read_token in
-            let* () = Yard.push_value (Bool b) in
-            iter ()
-        | Unit when tiktok -> Yard.return ()
-        | Unit ->
-            let* _ = Yard.read_token in
-            let* () = Yard.push_value Unit in
-            iter ()
-        | If when tiktok -> Yard.return ()
-        | If ->
-            let* _ = Yard.read_token in
-            let* cond = eval_one () in
-            let* then_branch = prepare () in
-            let* else_branch = prepare () in
-            let* () =
-              match cond with
-              | Bool b when b ->
-                  let* res = eval_prepared then_branch in
-                  Yard.push_value res
-              | Bool _ ->
-                  let* res = eval_prepared else_branch in
-                  Yard.push_value res
-              | _ -> Yard.failwith @@ Errors.reportTypeError "Bool" cond
-            in
-            iter ()
-        | Id _ when tiktok -> Yard.return ()
-        | Id id ->
-            let* _ = Yard.read_token in
-            let* () = Yard.push_value (Id id) in
-            iter ()
-        | Builtin _ when tiktok -> Yard.return ()
-        | Builtin b ->
-            let* _ = Yard.read_token in
-            let* () = eval_builtin b in
-            iter ()
-        | EOF -> Yard.failwith @@ Errors.reportUnexpectedEOF None
-    in
     logf "[Shunting_yard] called eval\n";
     let* () = Yard.push_op StackSeparator in
-    let* () = iter () in
+    let* () = eval_iter () in
     let* () = finish_eval () in
     let* t = Yard.peek_token in
     match t with EOF -> Yard.return () | _ -> eval ()
@@ -275,8 +275,8 @@ end = struct
     logf "[Shunting_yard] called eval_op\n";
     match op with
     | Arthmetic op -> (
-        let* rhs = Yard.pop_value in
-        let* lhs = Yard.pop_value in
+        let* rhs = Yard.bind Yard.pop_value deref_val in
+        let* lhs = Yard.bind Yard.pop_value deref_val in
         try
           match (lhs, rhs) with
           | Number lhs, Number rhs -> Yard.push_value @@ eval_binop lhs rhs op
@@ -285,34 +285,56 @@ end = struct
               @@ Errors.reportOperatorArgsTypeError "Numbers" lhs rhs
         with Division_by_zero -> Yard.failwith @@ Errors.reportDivisionByZero)
     | Relation op -> (
-        let* rhs = Yard.pop_value in
-        let* lhs = Yard.pop_value in
+        let* rhs = Yard.bind Yard.pop_value deref_val in
+        let* lhs = Yard.bind Yard.pop_value deref_val in
         match (lhs, rhs) with
         | Number lhs, Number rhs -> Yard.push_value @@ eval_relop lhs rhs op
         | _ ->
             Yard.failwith
             @@ Errors.reportOperatorArgsTypeError "Numbers" lhs rhs)
     | Boolean Not -> (
-        let* arg = Yard.pop_value in
+        let* arg = Yard.bind Yard.pop_value deref_val in
         match arg with
         | Bool b -> Yard.push_value (Bool (not b))
         | _ -> Yard.failwith @@ Errors.reportTypeError "Bool" arg)
     | Boolean op -> (
-        let* rhs = Yard.pop_value in
-        let* lhs = Yard.pop_value in
+        let* rhs = Yard.bind Yard.pop_value deref_val in
+        let* lhs = Yard.bind Yard.pop_value deref_val in
         match (lhs, rhs, op) with
         | Bool lhs, Bool rhs, And -> Yard.push_value @@ Bool (lhs && rhs)
         | Bool lhs, Bool rhs, Or -> Yard.push_value @@ Bool (lhs || rhs)
         | _ ->
             Yard.failwith @@ Errors.reportOperatorArgsTypeError "Bools" lhs rhs)
-    | Comma -> 
-        let* rhs = Yard.pop_value in
-        let* lhs = Yard.pop_value in
+    | Comma ->
+        let* rhs = Yard.bind Yard.pop_value deref_val in
+        let* lhs = Yard.bind Yard.pop_value deref_val in
         Yard.push_value (Pair (lhs, rhs))
-    | Assign -> Yard.failwith "Not Implemented"
+    | Assign -> eval_assign ()
     | Binding -> Yard.failwith "Not Implemented"
     | Apply -> Yard.failwith "Not Implemented"
     | _ -> Yard.failwith "This should be unreachable"
+
+  and eval_assign () =
+    logf "[Shunting_yard] called eval_assign\n";
+    let* rhs = Yard.bind Yard.pop_value deref_val in
+    let* lhs = Yard.pop_value in
+    let* () = Yard.push_value rhs in
+    match (lhs, rhs) with
+    | Id _lhs, Lambda (_var, _body) -> Yard.failwith "Not Implemented"
+    | Id _lhs, Closure (_env, _body) -> Yard.failwith "Not Implemented"
+    | Id lhs, _ -> Yard.push_assign @@ Assign (lhs, rhs)
+    | _ -> Yard.failwith @@ Errors.reportTypeError "Id" lhs
+
+  and deref_val var =
+    logf "[Shunting_yard] called deref_val\n";
+    match var with
+    | Id id -> (
+        let* assignment_stack = Yard.assignment_stack in
+        let pred = function Assign (s, v) when s = id -> Some v | _ -> None in
+        match List.find_map pred assignment_stack with
+        | Some v -> Yard.return v
+        | None -> Yard.failwith "Referenced Id not found")
+    | _ -> Yard.return var
 
   and close_bracket () =
     logf "[Shunting_yard] called close_bracket\n";
@@ -349,5 +371,9 @@ end = struct
       finish_eval ()
 
   and close_scope () = Yard.failwith "Not Implemented"
-  and handle_semicolon () = Yard.failwith "Not Implemented"
+
+  and handle_semicolon () =
+    let* () = finish_eval () in
+    let* _ = Yard.pop_value in
+    Yard.push_op StackSeparator
 end

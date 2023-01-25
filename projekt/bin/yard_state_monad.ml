@@ -41,11 +41,17 @@ module type S = sig
   val pop_assign : assignment t
   (** pop assignment from the stack and return it *)
 
+  val assignment_stack : assignList t
+  (** view value stack *)
+
   val value_stack : valueList t
   (** view value stack *)
 
   val get_tiktok : bool t
   (** get tiktok state *)
+
+  val set_tiktok : bool -> unit t
+  (** set tiktok state *)
 
   val failwith : string -> 'a t
   (** failwith error *)
@@ -102,10 +108,20 @@ module Yard = struct
     logf "[Yard] called value_stack\n";
     return value_stack
 
+  and assignment_stack =
+    let* { assignment_stack; _ } = get in
+    logf "[Yard] called assignment_stack\n";
+    return assignment_stack
+
   and get_tiktok =
     let* { tiktok; _ } = get in
     logf "[Yard] called get_tiktok -> %b\n" tiktok;
     return tiktok
+
+  and set_tiktok state =
+    let* env = get in
+    logf "[Yard] called set_tiktok with %s\n" @@ string_of_bool state;
+    set { env with tiktok = state }
 
   and eval_with (lst, trans) cont =
     logf "[Yard] called eval_with\n";
