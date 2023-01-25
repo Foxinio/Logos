@@ -22,7 +22,6 @@ let mkLocation (pos, _) =
   let column = pos.Lexing.pos_cnum - pos.Lexing.pos_bol + 1 in
   let file = pos.Lexing.pos_fname in
   Location { line; column; file }
-  
 
 type relop = Equals | NotEquals | Less | Greater | LessEqual | GreaterEqual
 
@@ -60,15 +59,15 @@ type operator =
   | CloseBracket
   | OpenScope
   | CloseScope
+  | StackSeparator
 
 module OperatorSeq = MySeq.Make (struct
   type elem = operator
 
-  let default = OpenScope
+  let default = StackSeparator
 end)
 
 type operatorList = OperatorSeq.t
-
 type binding = Left | Right
 
 let string_of_operator = function
@@ -84,8 +83,10 @@ let string_of_operator = function
   | CloseBracket -> ")"
   | OpenScope -> "{"
   | CloseScope -> "}"
+  | StackSeparator -> "<Stack_Separator>"
 
 let operator_prio = function
+  | StackSeparator -> -2
   | OpenBracket -> -1
   | Semi -> 0
   | Assign -> 1
@@ -93,12 +94,12 @@ let operator_prio = function
   | Comma -> 3
   | Boolean Or -> 4
   | Boolean And -> 5
-  | Relation rel when rel = Equals || rel = NotEquals -> 6
-  | Relation _ -> 7
-  | Arthmetic op when op = Add || op = Sub -> 8
-  | Arthmetic _ -> 9
-  | Apply -> 10
-  | Boolean Not -> 11
+  | Boolean Not -> 6
+  | Relation rel when rel = Equals || rel = NotEquals -> 7
+  | Relation _ -> 8
+  | Arthmetic op when op = Add || op = Sub -> 9
+  | Arthmetic _ -> 10
+  | Apply -> 11
   | _ as op ->
       raise
         (Invalid_argument
@@ -179,9 +180,9 @@ type value =
   | Closure of (string, value) Hashtbl.t * value
 
 module ValueSeq = MySeq.Make (struct
-    type elem = value
+  type elem = value
 
-    let default = Unit
+  let default = Unit
 end)
 
 type valueList = ValueSeq.t
@@ -215,13 +216,16 @@ let eval_relop lhs rhs = function
   | LessEqual -> Bool (lhs <= rhs)
   | GreaterEqual -> Bool (lhs >= rhs)
 
-
 type assignment = Assign of string * value | ScopeBorder
 
-module AssignSeq = MySeq.Make (struct
-    type elem = assignment
+let string_of_assign = function
+  | Assign (s, v) -> s ^ " : " ^ string_of_value v
+  | ScopeBorder -> "{"
 
-    let default = ScopeBorder
+module AssignSeq = MySeq.Make (struct
+  type elem = assignment
+
+  let default = ScopeBorder
 end)
 
 type assignList = AssignSeq.t

@@ -1,33 +1,6 @@
 open Lexing_utils
-
-module Make(State : sig type t end) : sig
-  type 'a t
-
-  val return : 'a -> 'a t
-  val bind   : 'a t -> ('a -> 'b t) -> 'b t
-
-  (** Pobierz stan *)
-  val get : State.t t
-
-  (** Ustaw stan *)
-  val set : State.t -> unit t
-
-  val run : State.t -> 'a t -> 'a
-
-end = struct
-
-  type 'a ans = State.t -> 'a * State.t
-  type 'a t = { run : 'r. ('a -> 'r ans) -> 'r ans }
-
-  let return x = { run = fun cont -> cont x }
-  let bind m f = { run = fun cont ->
-      m.run (fun x -> (f x).run cont) }
-
-  let get = { run = fun cont s -> cont s s }
-  let set s = { run = fun cont _ -> cont () s }
-
-  let run s m = m.run (fun a s -> a, s) s |> fst
-end
+open StateMonad
+open Logf
 
 module type S = sig
   type 'a t
@@ -35,51 +8,55 @@ module type S = sig
   val bind : 'a t -> ('a -> 'b t) -> 'b t
   val return : 'a -> 'a t
 
+  val eval_with : tokenList * (unit -> 'a t) -> ('a -> 'b t) -> 'b t
   (** pass tokenList and function to execute with it, then recover previous state *)
-  val eval_with : tokenList * (unit -> 'a t) -> (unit -> 'b t) -> 'b t
 
+  val init : tokenList -> 'a t -> valueList
   (** start monad with tokenList *)
-  val init : tokenList -> 'a t
 
-  (** pop token from list and return it *)
   val read_token : token t
+  (** pop token from list and return it *)
 
-  (** read token from list without modifying it *)
   val peek_token : token t
+  (** read token from list without modifying it *)
 
-  (** push value to value stack *)
   val push_value : value -> unit t
+  (** push value to value stack *)
 
-  (** push operator to operator stack *)
   val push_op : operator -> unit t
+  (** push operator to operator stack *)
 
-  (** push assignment to assignment stack *)
   val push_assign : assignment -> unit t
+  (** push assignment to assignment stack *)
 
-  (** pop value from the stack and return it *)
   val pop_value : value t
+  (** pop value from the stack and return it *)
 
-  (** pop operator from the stack and return it *)
   val pop_op : operator t
+  (** pop operator from the stack and return it *)
 
-  (** read operator from the stack without modifying it *)
   val peek_op : operator t
+  (** read operator from the stack without modifying it *)
 
-  (** pop assignment from the stack and return it *)
   val pop_assign : assignment t
+  (** pop assignment from the stack and return it *)
 
-  (** view value stack *)
   val value_stack : valueList t
+  (** view value stack *)
 
-  (** get tiktok state *)
   val get_tiktok : bool t
+  (** get tiktok state *)
 
-  (** failwith error *)
   val failwith : string -> 'a t
-
+  (** failwith error *)
 end
 
-module Yard : S = struct
+let to_string lst to_string =
+  List.fold_left
+    (fun s t -> s ^ (if s = "" then "" else ", ") ^ to_string t)
+    "" lst
+
+module Yard = struct
   type yard = {
     tiktok : bool;
     value_stack : valueList;
@@ -87,83 +64,158 @@ module Yard : S = struct
     assignment_stack : assignment list;
     token_iterator : tokenList;
   }
-  include Make(struct type t = yard end)
+
+  include Make (struct
+    type t = yard
+  end)
+
   let ( let* ) = bind
 
-  let make_env value_stack operator_stack assignment_stack token_iterator tiktok
-      =
-    { value_stack; operator_stack; assignment_stack; token_iterator; tiktok }
+  let rec bind a b =
+    let* res =
+      try
+        let* res = a in
+        return res
+      with _ -> failwith "Unknown exception"
+    in
+    b res
 
-  let update_val new_val env = { env with value_stack = new_val }
-  let update_op new_op env = { env with operator_stack = new_op }
-  let update_assign new_assign env = { env with assignment_stack = new_assign }
+  and init lexbuf eval =
+    let env =
+      {
+        value_stack = [];
+        operator_stack = [];
+        assignment_stack = [];
+        token_iterator = lexbuf;
+        tiktok = false;
+      }
+    in
+    let b =
+      let* _ = eval in
+      let* () = dump_state None in
+      value_stack
+    in
+    run env b
 
+  and value_stack =
+    let* { value_stack; _ } = get in
+    logf "[Yard] called value_stack\n";
+    return value_stack
 
-  let eval_with (lst, trans) cont =
-      let* { token_iterator; _ } as env = get in
-      let* () = set { env with token_iterator=lst } in
-      let* _ = trans () in
-      let* env = get in
-      bind (set { env with token_iterator }) cont
-      
+  and get_tiktok =
+    let* { tiktok; _ } = get in
+    logf "[Yard] called get_tiktok -> %b\n" tiktok;
+    return tiktok
 
+  and eval_with (lst, trans) cont =
+    logf "[Yard] called eval_with\n";
+    let* ({ token_iterator; _ } as env) = get in
+    let* () = set { env with token_iterator = lst } in
+    let* ret = trans () in
+    let* env = get in
+    let* () = set { env with token_iterator } in
+    bind (return ret) cont
 
-  let init lexbuf = run (make_env [] [] [] lexbuf false) eval 
+  and read_token =
+    let* ({ token_iterator; _ } as env) = get in
+    logf "[Yard] called read_token -> %s\n"
+    @@ string_of_token @@ TokenSeq.hd token_iterator;
+    let* () = set { env with token_iterator = TokenSeq.tl token_iterator } in
+    return @@ TokenSeq.hd token_iterator
 
-  let value_stack =
-      let* { value_stack; _ } = get in
-      return value_stack
+  and push_value x =
+    let* ({ value_stack; _ } as env) = get in
+    logf "[Yard] called push_value with %s\n" @@ string_of_value x;
+    set { env with value_stack = x :: value_stack; tiktok = true }
 
-  let get_tiktok =
-      let* { tiktok; _ } = get in
-      return tiktok
+  and push_op op =
+    let* ({ operator_stack; _ } as env) = get in
+    logf "[Yard] called push_op with %s\n" @@ string_of_operator op;
+    set { env with operator_stack = op :: operator_stack; tiktok = false }
 
+  and push_assign assign =
+    let* ({ assignment_stack; _ } as env) = get in
+    logf "[Yard] called push_assign with %s\n" @@ string_of_assign assign;
+    set { env with assignment_stack = assign :: assignment_stack }
 
-  let read_token =
-      let* { token_iterator; _ } as env = get in
-      let* () = set { env with token_iterator = TokenSeq.tl token_iterator } in
-      return @@ TokenSeq.hd token_iterator
+  and pop_value =
+    let* ({ value_stack; _ } as env) = get in
+    logf "[Yard] called pop_value -> %s\n"
+    @@ string_of_value @@ ValueSeq.hd value_stack;
+    let* () = set { env with value_stack = ValueSeq.tl value_stack } in
+    return @@ ValueSeq.hd value_stack
 
-  let push_value x =
-      let* { value_stack; _ } as env = get in
-      set { env with value_stack = x :: value_stack; tiktok = true }
+  and pop_op =
+    let* ({ operator_stack; _ } as env) = get in
+    logf "[Yard] called pop_op -> %s\n"
+    @@ string_of_operator
+    @@ OperatorSeq.hd operator_stack;
+    let* () = set { env with operator_stack = OperatorSeq.tl operator_stack } in
+    return @@ OperatorSeq.hd operator_stack
 
-  let push_op op =
-      let* { operator_stack; _ } as env = get in
-      set { env with operator_stack = op :: operator_stack; tiktok = false }
+  and pop_assign =
+    let* ({ assignment_stack; _ } as env) = get in
+    logf "[Yard] called pop_assign -> %s\n"
+    @@ string_of_assign
+    @@ AssignSeq.hd assignment_stack;
+    let* () =
+      set { env with assignment_stack = AssignSeq.tl assignment_stack }
+    in
+    return @@ AssignSeq.hd assignment_stack
 
-  let push_assign assign =
-      let* { assignment_stack; _ } as env = get in
-      set { env with assignment_stack = assign :: assignment_stack }
+  and peek_op =
+    let* { operator_stack; _ } = get in
+    logf "[Yard] called peek_op -> %s\n"
+    @@ string_of_operator
+    @@ OperatorSeq.hd operator_stack;
+    return @@ OperatorSeq.hd operator_stack
 
+  and peek_token =
+    let* { token_iterator; _ } = get in
+    logf "[Yard] called peek_token -> %s\n"
+    @@ string_of_token @@ TokenSeq.hd token_iterator;
+    return @@ TokenSeq.hd token_iterator
 
-  let pop_value =
-      let* { value_stack; _ } as env = get in
-      let* () = set { env with value_stack = ValueSeq.tl value_stack } in
-      return @@ ValueSeq.hd value_stack
-
-  let pop_op =
-      let* { operator_stack; _ } as env = get in
-      let* () = set { env with operator_stack = OperatorSeq.tl operator_stack } in
-      return @@ OperatorSeq.hd operator_stack
-
-  let pop_assign =
-      let* { assignment_stack; _ } as env = get in
-      let* () = set { env with assignment_stack = AssignSeq.tl assignment_stack } in
-      return @@ AssignSeq.hd assignment_stack
-
-
-
-  let peek_op =
-      let* { operator_stack; _ } = get in
-      return @@ OperatorSeq.hd operator_stack
-
-  let peek_token =
+  and dump_state info =
+    let string_of_token_stack =
       let* { token_iterator; _ } = get in
-      return @@ TokenSeq.hd token_iterator
+      let s = to_string token_iterator string_of_token in
+      return s
+    and string_of_value_stack =
+      let* { value_stack; _ } = get in
+      let s = to_string value_stack string_of_value in
+      return s
+    and string_of_assign_stack =
+      let* { assignment_stack; _ } = get in
+      let s = to_string assignment_stack string_of_assign in
+      return s
+    and string_of_operator_stack =
+      let* { operator_stack; _ } = get in
+      let s = to_string operator_stack string_of_operator in
+      return s
+    in
+    let* token_string = string_of_token_stack in
+    let* value_string = string_of_value_stack in
+    let* assignment_string = string_of_assign_stack in
+    let* operator_string = string_of_operator_stack in
+    let title =
+      match info with
+      | Some s -> "Critical Failure: (" ^ s ^ ")"
+      | None -> "Stack Dump:"
+    in
+    return
+      (logf
+         "[Yard] %s\n\
+          [Yard]  Token Stack:      [%s]\n\
+          [Yard]  Operator Stack:   [%s]\n\
+          [Yard]  Value Stack:      [%s]\n\
+          [Yard]  Assignment Stack: [%s]\n\
+          [Yard]  Finishing\n"
+         title token_string operator_string value_string assignment_string)
 
-  let failwith s = return @@ failwith s
-
+  and failwith s =
+    let* () = dump_state (Some s) in
+    close_log ();
+    Printf.eprintf "%s\n" s;
+    exit 1
 end
-
-

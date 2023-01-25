@@ -1,4 +1,3 @@
-
 module Make(State : sig type t end) : sig
   type 'a t
 

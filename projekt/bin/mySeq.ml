@@ -15,19 +15,19 @@ module Make (M : S) = struct
 
   let fold_left fn init =
     let rec iter acc lst = match unpack lst with
-      | (_, []) -> acc
+      | (x, []) -> fn acc x
       | (x, xs) -> iter (fn acc x) xs
     in
     iter init
 
   let rec fold_right fn init lst =
     match unpack lst with
-      | (_, []) -> init
+      | (x, []) -> fn init x
       | (x, xs) -> fn (fold_right fn init xs) x
 
   let rec map fn lst =
       match unpack lst with
-      | (_, []) -> []
+      | (x, []) -> [ fn x ]
       | (x, xs) -> (fn x) :: map fn xs
 
   let rec nth n lst =
