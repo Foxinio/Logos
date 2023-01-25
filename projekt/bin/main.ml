@@ -29,6 +29,7 @@ let print_stack v =
     | Unit -> "()"
     | Bool b -> string_of_bool b
     | Id id -> id
+    | Pair (Pair _ as p1, v2) -> sprintf "(%s),%s" (iter p1) (iter v2)
     | Pair (v1, v2) -> sprintf "%s,%s" (iter v1) (iter v2)
     | Lambda _ -> "<lambda>"
     | Closure _ -> "<closure>"

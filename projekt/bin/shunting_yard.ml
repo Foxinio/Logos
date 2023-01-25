@@ -101,16 +101,13 @@ end = struct
             let* () = eval_builtin b in
             iter ()
         | EOF -> Yard.failwith @@ Errors.reportUnexpectedEOF None
-    and wrap_iter () =
-      logf "[Shunting_yard] called wrap_iter\n";
-      let* () = Yard.push_op StackSeparator in
-      let* () = iter () in
-      let* () = finish_eval () in
-      let* t = Yard.peek_token in
-      match t with EOF -> Yard.return () | _ -> wrap_iter ()
     in
     logf "[Shunting_yard] called eval\n";
-    wrap_iter ()
+    let* () = Yard.push_op StackSeparator in
+    let* () = iter () in
+    let* () = finish_eval () in
+    let* t = Yard.peek_token in
+    match t with EOF -> Yard.return () | _ -> eval ()
 
   and prepare () =
     logf "[Shunting_yard] called prepare\n";
@@ -308,7 +305,10 @@ end = struct
         | Bool lhs, Bool rhs, Or -> Yard.push_value @@ Bool (lhs || rhs)
         | _ ->
             Yard.failwith @@ Errors.reportOperatorArgsTypeError "Bools" lhs rhs)
-    | Comma -> Yard.failwith "Not Implemented"
+    | Comma -> 
+        let* rhs = Yard.pop_value in
+        let* lhs = Yard.pop_value in
+        Yard.push_value (Pair (lhs, rhs))
     | Assign -> Yard.failwith "Not Implemented"
     | Binding -> Yard.failwith "Not Implemented"
     | Apply -> Yard.failwith "Not Implemented"

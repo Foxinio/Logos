@@ -75,6 +75,9 @@
       | eof
       { EOF }
 
+      | "()"
+      { Unit }
+
       | ''' ( (char_literal) as c ) '''
       {
          Number(int_of_char c)
