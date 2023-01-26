@@ -1,4 +1,5 @@
 open Lexing_utils
+open Lexing_types
 open StateMonad
 open Logf
 
@@ -77,12 +78,47 @@ module Yard = struct
 
   let ( let* ) = bind
 
+  let string_of_token_stack =
+    let* { token_iterator; _ } = get in
+    let s = to_string token_iterator string_of_token in
+    return s
+
+  let string_of_value_stack =
+    let* { value_stack; _ } = get in
+    let s = to_string value_stack string_of_value in
+    return s
+
+  let string_of_assign_stack =
+    let* { assignment_stack; _ } = get in
+    let s = to_string assignment_stack string_of_assign in
+    return s
+
+  let string_of_operator_stack =
+    let* { operator_stack; _ } = get in
+    let s = to_string operator_stack string_of_operator in
+    return s
+
+  let dump_state =
+    let* token_string = string_of_token_stack in
+    let* value_string = string_of_value_stack in
+    let* assignment_string = string_of_assign_stack in
+    let* operator_string = string_of_operator_stack in
+    logf
+      "[Yard] State Dump:\n\
+       [Yard]  Token Stack:      [%s]\n\
+       [Yard]  Operator Stack:   [%s]\n\
+       [Yard]  Value Stack:      [%s]\n\
+       [Yard]  Assignment Stack: [%s]\n\
+       [Yard]  Finishing\n"
+      token_string operator_string value_string assignment_string;
+    return ()
+
   let rec bind a b =
     let* res =
       try
         let* res = a in
         return res
-      with _ -> failwith "Unknown exception"
+      with e -> failwith @@ Printexc.to_string e
     in
     b res
 
@@ -98,7 +134,7 @@ module Yard = struct
     in
     let b =
       let* _ = eval in
-      let* () = dump_state None in
+      let* () = dump_state in
       value_stack
     in
     run env b
@@ -166,6 +202,7 @@ module Yard = struct
     logf "[Yard] called pop_op -> %s\n"
     @@ string_of_operator
     @@ OperatorSeq.hd operator_stack;
+    let* () = dump_state in
     let* () = set { env with operator_stack = OperatorSeq.tl operator_stack } in
     return @@ OperatorSeq.hd operator_stack
 
@@ -192,46 +229,11 @@ module Yard = struct
     @@ string_of_token @@ TokenSeq.hd token_iterator;
     return @@ TokenSeq.hd token_iterator
 
-  and dump_state info =
-    let string_of_token_stack =
-      let* { token_iterator; _ } = get in
-      let s = to_string token_iterator string_of_token in
-      return s
-    and string_of_value_stack =
-      let* { value_stack; _ } = get in
-      let s = to_string value_stack string_of_value in
-      return s
-    and string_of_assign_stack =
-      let* { assignment_stack; _ } = get in
-      let s = to_string assignment_stack string_of_assign in
-      return s
-    and string_of_operator_stack =
-      let* { operator_stack; _ } = get in
-      let s = to_string operator_stack string_of_operator in
-      return s
-    in
-    let* token_string = string_of_token_stack in
-    let* value_string = string_of_value_stack in
-    let* assignment_string = string_of_assign_stack in
-    let* operator_string = string_of_operator_stack in
-    let title =
-      match info with
-      | Some s -> "Critical Failure: (" ^ s ^ ")"
-      | None -> "Stack Dump:"
-    in
-    return
-      (logf
-         "[Yard] %s\n\
-          [Yard]  Token Stack:      [%s]\n\
-          [Yard]  Operator Stack:   [%s]\n\
-          [Yard]  Value Stack:      [%s]\n\
-          [Yard]  Assignment Stack: [%s]\n\
-          [Yard]  Finishing\n"
-         title token_string operator_string value_string assignment_string)
-
   and failwith s =
-    let* () = dump_state (Some s) in
-    close_log ();
+    logf "[Yard] Failure: (%s)\n" s;
+    let* () = dump_state in
     Printf.eprintf "%s\n" s;
+    log_backtrace ();
+    close_log ();
     exit 1
 end

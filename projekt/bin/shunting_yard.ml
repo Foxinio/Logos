@@ -1,4 +1,5 @@
 open Lexing_utils
+open Lexing_types
 open Logf
 
 module Make (Yard : Yard_state_monad.S) : sig
@@ -43,7 +44,7 @@ end = struct
       | Operator (Boolean Not as op) ->
           let* _ = Yard.read_token in
           let* () = try_push_op op in
-          let* () = Yard.set_tiktok true in
+          let* () = Yard.set_tiktok false in
           eval_iter ()
       | Operator _ when not tiktok ->
           Yard.failwith @@ Errors.reportOperatorCumulation
@@ -99,7 +100,7 @@ end = struct
           let* _ = Yard.read_token in
           let* () = eval_builtin b in
           eval_iter ()
-      | EOF -> Yard.failwith @@ Errors.reportUnexpectedEOF None
+      | EOF -> Yard.return ()
 
   and eval () =
     logf "[Shunting_yard] called eval\n";
@@ -275,8 +276,8 @@ end = struct
     logf "[Shunting_yard] called eval_op\n";
     match op with
     | Arthmetic op -> (
-        let* rhs = Yard.bind Yard.pop_value deref_val in
-        let* lhs = Yard.bind Yard.pop_value deref_val in
+        let* rhs = deref_val () in
+        let* lhs = deref_val () in
         try
           match (lhs, rhs) with
           | Number lhs, Number rhs -> Yard.push_value @@ eval_binop lhs rhs op
@@ -285,48 +286,54 @@ end = struct
               @@ Errors.reportOperatorArgsTypeError "Numbers" lhs rhs
         with Division_by_zero -> Yard.failwith @@ Errors.reportDivisionByZero)
     | Relation op -> (
-        let* rhs = Yard.bind Yard.pop_value deref_val in
-        let* lhs = Yard.bind Yard.pop_value deref_val in
+        let* rhs = deref_val () in
+        let* lhs = deref_val () in
         match (lhs, rhs) with
         | Number lhs, Number rhs -> Yard.push_value @@ eval_relop lhs rhs op
         | _ ->
             Yard.failwith
             @@ Errors.reportOperatorArgsTypeError "Numbers" lhs rhs)
     | Boolean Not -> (
-        let* arg = Yard.bind Yard.pop_value deref_val in
+        let* arg = deref_val () in
         match arg with
         | Bool b -> Yard.push_value (Bool (not b))
         | _ -> Yard.failwith @@ Errors.reportTypeError "Bool" arg)
     | Boolean op -> (
-        let* rhs = Yard.bind Yard.pop_value deref_val in
-        let* lhs = Yard.bind Yard.pop_value deref_val in
+        let* rhs = deref_val () in
+        let* lhs = deref_val () in
         match (lhs, rhs, op) with
         | Bool lhs, Bool rhs, And -> Yard.push_value @@ Bool (lhs && rhs)
         | Bool lhs, Bool rhs, Or -> Yard.push_value @@ Bool (lhs || rhs)
         | _ ->
             Yard.failwith @@ Errors.reportOperatorArgsTypeError "Bools" lhs rhs)
     | Comma ->
-        let* rhs = Yard.bind Yard.pop_value deref_val in
-        let* lhs = Yard.bind Yard.pop_value deref_val in
+        let* rhs = deref_val () in
+        let* lhs = deref_val () in
         Yard.push_value (Pair (lhs, rhs))
-    | Assign -> eval_assign ()
-    | Binding -> Yard.failwith "Not Implemented"
+    | Assign -> (
+        let* rhs = deref_val () in
+        let* lhs = Yard.pop_value in
+        let* () = Yard.push_value rhs in
+        match (lhs, rhs) with
+        | Id _lhs, Lambda (_var, _body) -> Yard.failwith "Not Implemented"
+        | Id _lhs, Closure (_env, _body) -> Yard.failwith "Not Implemented"
+        | Id lhs, _ -> Yard.push_assign @@ Assign (lhs, rhs)
+        | _ -> Yard.failwith @@ Errors.reportTypeError "Id" lhs)
+    | Binding -> (
+        let* rhs = deref_val () in
+        let* lhs = Yard.pop_value in
+        let* () = Yard.push_value rhs in
+        match (lhs, rhs) with
+        | Id _lhs, Lambda (_var, _body) -> Yard.failwith "Not Implemented"
+        | Id _lhs, Closure (_env, _body) -> Yard.failwith "Not Implemented"
+        | Id lhs, _ -> Yard.push_assign @@ Assign (lhs, rhs)
+        | _ -> Yard.failwith @@ Errors.reportTypeError "Id" lhs)
     | Apply -> Yard.failwith "Not Implemented"
     | _ -> Yard.failwith "This should be unreachable"
 
-  and eval_assign () =
-    logf "[Shunting_yard] called eval_assign\n";
-    let* rhs = Yard.bind Yard.pop_value deref_val in
-    let* lhs = Yard.pop_value in
-    let* () = Yard.push_value rhs in
-    match (lhs, rhs) with
-    | Id _lhs, Lambda (_var, _body) -> Yard.failwith "Not Implemented"
-    | Id _lhs, Closure (_env, _body) -> Yard.failwith "Not Implemented"
-    | Id lhs, _ -> Yard.push_assign @@ Assign (lhs, rhs)
-    | _ -> Yard.failwith @@ Errors.reportTypeError "Id" lhs
-
-  and deref_val var =
+  and deref_val () =
     logf "[Shunting_yard] called deref_val\n";
+    let* var = Yard.pop_value in
     match var with
     | Id id -> (
         let* assignment_stack = Yard.assignment_stack in
@@ -348,17 +355,14 @@ end = struct
   and try_push_op op =
     logf "[Shunting_yard] called try_push_op\n";
     let* top_op = Yard.peek_op in
-    try
-      if
-        operator_prio top_op > operator_prio op
-        || operator_prio top_op = operator_prio op
-           && operator_binding op = Left
-      then
-        let* top_op = Yard.pop_op in
-        let* () = eval_op top_op in
-        try_push_op op
-      else Yard.push_op op
-    with Invalid_argument s -> Yard.failwith s
+    if
+      operator_prio top_op > operator_prio op
+      || (operator_prio top_op = operator_prio op && operator_binding op = Left)
+    then
+      let* top_op = Yard.pop_op in
+      let* () = eval_op top_op in
+      try_push_op op
+    else Yard.push_op op
 
   and finish_eval () =
     logf "[Shunting_yard] called finish_eval\n";
@@ -370,7 +374,14 @@ end = struct
       let* () = eval_op top_op in
       finish_eval ()
 
-  and close_scope () = Yard.failwith "Not Implemented"
+  and close_scope () =
+    let* assign = Yard.pop_assign in
+    match assign with
+    | ScopeBorder -> Yard.return ()
+    | ClosureEnv _ ->
+        let* () = close_scope () in
+        Yard.push_assign assign
+    | Assign _ -> close_scope ()
 
   and handle_semicolon () =
     let* () = finish_eval () in

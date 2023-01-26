@@ -11,5 +11,8 @@ let output_log =
 
 let logf fmt = Printf.fprintf output_log fmt
 
+let log_backtrace () =
+    Printexc.print_backtrace output_log
+
 let close_log () =
   close_out_noerr output_log

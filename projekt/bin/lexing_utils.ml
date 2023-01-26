@@ -1,3 +1,6 @@
+open Lexing_types
+
+
 type location = Location of { line : int; column : int; file : string }
 
 let string_of_location (Location { line; column; file }) =
@@ -23,7 +26,6 @@ let mkLocation (pos, _) =
   let file = pos.Lexing.pos_fname in
   Location { line; column; file }
 
-type relop = Equals | NotEquals | Less | Greater | LessEqual | GreaterEqual
 
 let string_of_relop = function
   | Equals -> "=="
@@ -33,7 +35,6 @@ let string_of_relop = function
   | LessEqual -> "<="
   | GreaterEqual -> ">="
 
-type arthmop = Add | Sub | Mult | Div | Mod
 
 let string_of_arthmop = function
   | Add -> "+"
@@ -42,32 +43,10 @@ let string_of_arthmop = function
   | Div -> "/"
   | Mod -> "%"
 
-type boolop = Or | And | Not
 
 let string_of_boolop = function Or -> "||" | And -> "&&" | Not -> "!"
 
-type operator =
-  | Semi
-  | Assign
-  | Binding
-  | Apply
-  | Comma
-  | Relation of relop
-  | Arthmetic of arthmop
-  | Boolean of boolop
-  | OpenBracket
-  | CloseBracket
-  | OpenScope
-  | CloseScope
-  | StackSeparator
 
-module OperatorSeq = MySeq.Make (struct
-  type elem = operator
-
-  let default = StackSeparator
-end)
-
-type operatorList = OperatorSeq.t
 type binding = Left | Right
 
 let string_of_operator = function
@@ -107,8 +86,8 @@ let operator_prio = function
            @@ string_of_operator op))
 
 let operator_binding = function
-  | Assign -> Right
   | Binding -> Right
+  | Assign -> Right
   | Comma -> Right
   | Boolean _ -> Left
   | Relation _ -> Left
@@ -119,17 +98,6 @@ let operator_binding = function
         (Invalid_argument
            (Printf.sprintf "operator %s has no binding rule"
            @@ string_of_operator op))
-
-type builtin =
-  | Fst
-  | Snd
-  | Readc
-  | Writec
-  | At
-  | NumberPred
-  | BoolPred
-  | UnitPred
-  | PairPred
 
 let string_of_builtin = function
   | Fst -> "fst"
@@ -142,50 +110,16 @@ let string_of_builtin = function
   | UnitPred -> "is_unit"
   | PairPred -> "is_pair"
 
-type token =
-  | Number of int
-  | Operator of operator
-  | Unit
-  | Bool of bool
-  | If
-  | Id of string
-  | Builtin of builtin
-  | EOF
-
-module TokenSeq = MySeq.Make (struct
-  type elem = token
-
-  let default = EOF
-end)
-
-type tokenList = TokenSeq.t
 
 let string_of_token = function
-  | Number n -> "Number(" ^ string_of_int n ^ ")"
   | Operator op -> "Operator(" ^ string_of_operator op ^ ")"
+  | Number n -> "Number(" ^ string_of_int n ^ ")"
   | Unit -> "Unit()"
   | Bool b -> "Bool(" ^ string_of_bool b ^ ")"
   | If -> "If()"
   | Id id -> "Id(" ^ id ^ ")"
   | Builtin b -> "Builtin(" ^ string_of_builtin b ^ ")"
   | EOF -> "EOF"
-
-type value =
-  | Number of int
-  | Bool of bool
-  | Id of string
-  | Unit
-  | Pair of value * value
-  | Lambda of string * TokenSeq.t
-  | Closure of (string, value) Hashtbl.t * value
-
-module ValueSeq = MySeq.Make (struct
-  type elem = value
-
-  let default = Unit
-end)
-
-type valueList = ValueSeq.t
 
 let rec string_of_value = function
   | Number n -> "vNumber(" ^ string_of_int n ^ ")"
@@ -216,16 +150,16 @@ let eval_relop lhs rhs = function
   | LessEqual -> Bool (lhs <= rhs)
   | GreaterEqual -> Bool (lhs >= rhs)
 
-type assignment = Assign of string * value | ScopeBorder
 
 let string_of_assign = function
   | Assign (s, v) -> s ^ " : " ^ string_of_value v
+  | ClosureEnv env ->
+      "["
+      ^ Hashtbl.fold
+          (fun k v acc ->
+            let s = k ^ " : " ^ string_of_value v in
+            if acc = "" then s else acc ^ ", " ^ s)
+          env ""
+      ^ "]"
   | ScopeBorder -> "{"
 
-module AssignSeq = MySeq.Make (struct
-  type elem = assignment
-
-  let default = ScopeBorder
-end)
-
-type assignList = AssignSeq.t

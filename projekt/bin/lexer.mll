@@ -1,5 +1,6 @@
 {
   open Lexing
+  open Lexing_types
   open Lexing_utils
 
   let handleError lexbuf =
