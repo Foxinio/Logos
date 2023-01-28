@@ -1,0 +1,6 @@
+map_inc = (fn -> list ->
+    if is_pair list
+        fn $ (fst list) , map_inc $ (snd list)
+        list) $ (i -> i * 2);
+
+map_inc $ (1,2,3,4,())

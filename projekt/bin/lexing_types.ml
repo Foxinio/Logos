@@ -70,6 +70,7 @@ type value =
   | Pair of value * value
   | Lambda of string * TokenSeq.t
   | Closure of (string, value) Hashtbl.t * value
+  | ScopeBorder
 
 module ValueSeq = MySeq.Make (struct
   type elem = value

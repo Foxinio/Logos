@@ -1,6 +1,5 @@
 open Lexing_utils
 open Lexing_types
-open StateMonad
 open Logf
 
 module type S = sig
@@ -12,7 +11,7 @@ module type S = sig
   val eval_with : tokenList * (unit -> 'a t) -> ('a -> 'b t) -> 'b t
   (** pass tokenList and function to execute with it, then recover previous state *)
 
-  val init : tokenList -> 'a t -> valueList
+  val init : tokenList -> 'a t -> 'a
   (** start monad with tokenList *)
 
   val read_token : token t
@@ -60,10 +59,14 @@ end
 
 let to_string lst to_string =
   List.fold_left
-    (fun s t -> s ^ (if s = "" then "" else ", ") ^ to_string t)
+    (fun s t ->
+      let ts = to_string t in
+      s
+      ^ (if s = "" then "" else if String.length ts > 20 then ";\n\t" else ", ")
+      ^ to_string t)
     "" lst
 
-module Yard = struct
+module Yard : S = struct
   type yard = {
     tiktok : bool;
     value_stack : valueList;
@@ -72,7 +75,7 @@ module Yard = struct
     token_iterator : tokenList;
   }
 
-  include Make (struct
+  include StateMonad.Make (struct
     type t = yard
   end)
 
@@ -104,12 +107,17 @@ module Yard = struct
     let* assignment_string = string_of_assign_stack in
     let* operator_string = string_of_operator_stack in
     logf
-      "[Yard] State Dump:\n\
-       [Yard]  Token Stack:      [%s]\n\
-       [Yard]  Operator Stack:   [%s]\n\
-       [Yard]  Value Stack:      [%s]\n\
-       [Yard]  Assignment Stack: [%s]\n\
-       [Yard]  Finishing\n"
+      "[Yard]=======================================\n\
+       [Yard] State Dump:\n\
+       [Yard]  Token Stack:     \n\
+      \t[%s]\n\
+       [Yard]  Operator Stack:  \n\
+      \t[%s]\n\
+       [Yard]  Value Stack:     \n\
+      \t[%s]\n\
+       [Yard]  Assignment Stack:\n\
+      \t[%s]\n\
+       [Yard]=======================================\n"
       token_string operator_string value_string assignment_string;
     return ()
 
@@ -133,9 +141,10 @@ module Yard = struct
       }
     in
     let b =
-      let* _ = eval in
+      let* a = eval in
       let* () = dump_state in
-      value_stack
+      logf "[Yard]  Finishing with success\n";
+      return a
     in
     run env b
 
@@ -225,13 +234,12 @@ module Yard = struct
 
   and peek_token =
     let* { token_iterator; _ } = get in
-    logf "[Yard] called peek_token -> %s\n"
-    @@ string_of_token @@ TokenSeq.hd token_iterator;
     return @@ TokenSeq.hd token_iterator
 
   and failwith s =
     logf "[Yard] Failure: (%s)\n" s;
     let* () = dump_state in
+    logf "[Yard]  Finishing with failure\n";
     Printf.eprintf "%s\n" s;
     log_backtrace ();
     close_log ();

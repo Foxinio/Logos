@@ -11,20 +11,6 @@ let lexer_to_list lexbuf =
   in
   iter []
 
-let print_stack v =
-  let rec iter v =
-    match v with
-    | Number n -> string_of_int n
-    | Unit -> "()"
-    | Bool b -> string_of_bool b
-    | Id id -> id
-    | Pair ((Pair _ as p1), v2) -> Printf.sprintf "(%s),%s" (iter p1) (iter v2)
-    | Pair (v1, v2) -> Printf.sprintf "%s,%s" (iter v1) (iter v2)
-    | Lambda _ -> "<lambda>"
-    | Closure _ -> "<closure>"
-  in
-  match v with Pair _ -> "(" ^ iter v ^ ")" | _ -> iter v
-
 let to_string lst to_string =
   let s =
     List.fold_left
@@ -33,7 +19,8 @@ let to_string lst to_string =
   in
   if s <> "" then Printf.printf "%s\n" s
 
-let eval_file lexbuf =
+let eval_file channel =
+  let lexbuf = Lexing.from_channel channel in
   if !Opts.extra_debug then (
     Printf.printf "[[Lexing]]\n";
     let lexed = lexer_to_list lexbuf in
@@ -44,18 +31,12 @@ let eval_file lexbuf =
     Printf.printf "result of len: %d\n" @@ List.length res;
     Printf.printf "[[END]]\n";
     Printf.printf "[[Printing result]]\n";
-    to_string res print_stack;
+    to_string res display_results;
     Printf.printf "[[END]]\n")
   else
     let lexed = lexer_to_list lexbuf in
     let res = Shunting_yard.run lexed in
-    to_string res print_stack
-
-let readline () =
-    let rec iter acc =
-        let res = Scanf.scanf "%c" Fun.id in
-        if res = '\n' then acc else iter @@ Printf.sprintf "%s%c" acc res
-    in iter ""
+    to_string res display_results
 
 let rec repl () =
   Printf.printf "#";
@@ -64,24 +45,23 @@ let rec repl () =
   else
     let lexed = lexer_to_list @@ Lexing.from_string line in
     let res = Shunting_yard.run lexed in
-    to_string res print_stack;
+    to_string res display_results;
     repl ()
 
 let eval_files () =
-  Opts.parse_argv ();
   let argc = List.length !Opts.files in
   if argc = 0 then (
     Printf.printf "Using STD\n";
     repl ())
   else if argc = 1 then
-    let channel = open_in @@ List.hd !Opts.files in
-    let lexbuf = Lexing.from_channel channel in
-    eval_file lexbuf
+    try eval_file @@ open_in @@ List.hd !Opts.files
+    with Sys_error s -> Printf.eprintf "%s\n%!" s
   else
     let f () arg =
-      let channel = open_in arg in
-      let lexbuf = Lexing.from_channel channel in
-      Printf.printf "%s:\n" arg;
-      eval_file lexbuf
+      try
+        let channel = open_in arg in
+        Printf.printf "%s:\n" arg;
+        eval_file channel
+      with Sys_error s -> Printf.eprintf "%s\n%!" s
     in
     List.fold_left f () !Opts.files

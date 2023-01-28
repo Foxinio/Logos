@@ -1,5 +1,5 @@
 open Lexing_types
-
+open Logf
 
 type location = Location of { line : int; column : int; file : string }
 
@@ -26,7 +26,6 @@ let mkLocation (pos, _) =
   let file = pos.Lexing.pos_fname in
   Location { line; column; file }
 
-
 let string_of_relop = function
   | Equals -> "=="
   | NotEquals -> "<>"
@@ -35,7 +34,6 @@ let string_of_relop = function
   | LessEqual -> "<="
   | GreaterEqual -> ">="
 
-
 let string_of_arthmop = function
   | Add -> "+"
   | Sub -> "-"
@@ -43,9 +41,7 @@ let string_of_arthmop = function
   | Div -> "/"
   | Mod -> "%"
 
-
 let string_of_boolop = function Or -> "||" | And -> "&&" | Not -> "!"
-
 
 type binding = Left | Right
 
@@ -110,7 +106,6 @@ let string_of_builtin = function
   | UnitPred -> "is_unit"
   | PairPred -> "is_pair"
 
-
 let string_of_token = function
   | Operator op -> "Operator(" ^ string_of_operator op ^ ")"
   | Number n -> "Number(" ^ string_of_int n ^ ")"
@@ -121,35 +116,68 @@ let string_of_token = function
   | Builtin b -> "Builtin(" ^ string_of_builtin b ^ ")"
   | EOF -> "EOF"
 
-let rec string_of_value = function
-  | Number n -> "vNumber(" ^ string_of_int n ^ ")"
-  | Bool b -> "vBool(" ^ string_of_bool b ^ ")"
-  | Id id -> "vId(" ^ id ^ ")"
-  | Unit -> "vUnit()"
-  | Pair (v1, v2) ->
-      "vPair(" ^ string_of_value v1 ^ ", " ^ string_of_value v2 ^ ")"
-  | Lambda (v, lst) ->
-      let str =
-        TokenSeq.fold_left (fun acc t -> acc ^ string_of_token t ^ ", ") "" lst
-      in
-      "vLambda(" ^ v ^ " -> [" ^ str ^ "]"
-  | Closure (_, v) -> "vClosure(" ^ string_of_value v ^ ")"
+let string_of_tokenList ?(limit = 0) lst =
+  let llimit = if limit <= 0 then List.length lst else limit in
+  let _, res =
+    TokenSeq.fold_left
+      (fun (i, acc) t ->
+        if i > 0 then
+          (i - 1, (if acc = "" then "" else acc ^ ", ") ^ string_of_token t)
+        else if i = 0 then (-1, acc ^ ", ...")
+        else (i, acc))
+      (llimit, "") lst
+  in
+  res
 
-let eval_binop lhs rhs = function
-  | Add -> Number (lhs + rhs)
-  | Sub -> Number (lhs - rhs)
-  | Mult -> Number (lhs * rhs)
-  | Div -> Number (lhs / rhs)
-  | Mod -> Number (lhs mod rhs)
+let string_of_value v =
+  let rec iter = function
+    | Number n -> "vNumber(" ^ string_of_int n ^ ")"
+    | Bool b -> "vBool(" ^ string_of_bool b ^ ")"
+    | Id id -> "vId(" ^ id ^ ")"
+    | Unit -> "vUnit()"
+    | Pair (v1, v2) -> "vPair(" ^ iter v1 ^ ", " ^ iter v2 ^ ")"
+    | Lambda (v, lst) ->
+        let str = string_of_tokenList ~limit:5 lst in
+        "vLambda(" ^ v ^ " -> [" ^ str ^ "])"
+    | Closure (env, v) ->
+        "vClosure(["
+        ^ Hashtbl.fold
+            (fun k v acc ->
+              let vstr =
+                match v with
+                | Closure (env1, _) when env1 == env ->
+                    "thisClosure([...], (...))"
+                | Closure (_, v) -> "vClosure([...], " ^ iter v ^ ")"
+                | _ -> iter v
+              in
+              let s = k ^ " : " ^ vstr in
+              if acc = "" then s else acc ^ ", " ^ s)
+            env ""
+        ^ "]" ^ "," ^ iter v ^ ")"
+    | ScopeBorder -> "<Scope_Boarder>"
+  in
+  iter v
 
-let eval_relop lhs rhs = function
-  | Equals -> Bool (lhs = rhs)
-  | NotEquals -> Bool (lhs <> rhs)
-  | Less -> Bool (lhs < rhs)
-  | Greater -> Bool (lhs > rhs)
-  | LessEqual -> Bool (lhs <= rhs)
-  | GreaterEqual -> Bool (lhs >= rhs)
-
+let display_results v =
+  let rec iter v =
+    match v with
+    | Number n -> string_of_int n
+    | Unit -> "()"
+    | Bool b -> string_of_bool b
+    | Id id -> id
+    | Pair ((Pair _ as p1), v2) -> Printf.sprintf "(%s),%s" (iter p1) (iter v2)
+    | Pair (v1, v2) -> Printf.sprintf "%s,%s" (iter v1) (iter v2)
+    | Lambda (var, body) -> "<lambda:" ^ iter_lambda var body ^ ">"
+    | Closure (_, value) -> "<closure:" ^ iter value ^ ">"
+    | ScopeBorder -> "<Internal_error>"
+  and iter_lambda var (body : token list) =
+    var ^ "->"
+    ^
+    match body with
+    | Id id :: Operator Binding :: body -> iter_lambda id body
+    | _ -> "(...)"
+  in
+  match v with Pair _ -> "(" ^ iter v ^ ")" | _ -> iter v
 
 let string_of_assign = function
   | Assign (s, v) -> s ^ " : " ^ string_of_value v
@@ -163,3 +191,39 @@ let string_of_assign = function
       ^ "]"
   | ScopeBorder -> "{"
 
+let eval_binop lhs rhs = function
+  | Add ->
+      logf "[Shunting_yard:eval_op:eval_binop] evaluating %d+%d\n" lhs rhs;
+      Number (lhs + rhs)
+  | Sub ->
+      logf "[Shunting_yard:eval_op:eval_binop] evaluating %d-%d\n" lhs rhs;
+      Number (lhs - rhs)
+  | Mult ->
+      logf "[Shunting_yard:eval_op:eval_binop] evaluating %d*%d\n" lhs rhs;
+      Number (lhs * rhs)
+  | Div ->
+      logf "[Shunting_yard:eval_op:eval_binop] evaluating %d/%d\n" lhs rhs;
+      Number (lhs / rhs)
+  | Mod ->
+      logf "[Shunting_yard:eval_op:eval_binop] evaluating %d%%%d\n" lhs rhs;
+      Number (lhs mod rhs)
+
+let eval_relop lhs rhs = function
+  | Equals ->
+      logf "[Shunting_yard:eval_op:eval_relop] evaluating %d==%d\n" lhs rhs;
+      Bool (lhs = rhs)
+  | NotEquals ->
+      logf "[Shunting_yard:eval_op:eval_relop] evaluating %d<>%d\n" lhs rhs;
+      Bool (lhs <> rhs)
+  | Less ->
+      logf "[Shunting_yard:eval_op:eval_relop] evaluating %d<%d\n" lhs rhs;
+      Bool (lhs < rhs)
+  | Greater ->
+      logf "[Shunting_yard:eval_op:eval_relop] evaluating %d>%d\n" lhs rhs;
+      Bool (lhs > rhs)
+  | LessEqual ->
+      logf "[Shunting_yard:eval_op:eval_relop] evaluating %d<=%d\n" lhs rhs;
+      Bool (lhs <= rhs)
+  | GreaterEqual ->
+      logf "[Shunting_yard:eval_op:eval_relop] evaluating %d>=%d\n" lhs rhs;
+      Bool (lhs >= rhs)
