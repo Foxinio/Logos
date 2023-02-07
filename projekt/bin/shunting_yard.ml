@@ -125,14 +125,6 @@ end = struct
     logf "[Shunting_yard:prepare] preparing finished\n";
     Yard.return res
 
-  let rec map fn lst =
-    match lst with
-    | value :: lst ->
-        let* value = fn value in
-        let* rest = map fn lst in
-        Yard.return (value :: rest)
-    | [] -> Yard.return []
-
   let rev_map fn lst =
     let rec mapper acc lst =
       match lst with
@@ -486,7 +478,7 @@ end = struct
         in
         match List.find_map pred assignment_stack with
         | Some v -> Yard.return v
-        | None -> Yard.failwith "Referenced Id not found")
+        | None -> Yard.failwith "Referenced undefined variable")
     | _ -> Yard.return var
 
   and close_bracket () =
@@ -522,13 +514,22 @@ end = struct
 
   and deref_stack () =
     logf "[Shunting_yard] called deref_stack\n";
-    let* value = Yard.pop_value in
-    match value with
-    | ScopeBorder -> Yard.return ()
-    | _ ->
-        let* value = deref_val value in
-        let* () = deref_stack () in
-        Yard.push_value value
+    let* top_op = Yard.pop_op in
+    if top_op = StackSeparator then
+      let* value = pop_derefed () in
+      let* next_value = Yard.pop_value in
+      let* () =
+        if next_value = ScopeBorder then Yard.return ()
+        else
+          let* () = Yard.push_value next_value in
+          deref_stack ()
+      in
+      Yard.push_value value
+    else if top_op = OpenBracket then
+      Yard.failwith @@ Errors.reportUnclosedBracketWhileFolding
+    else
+      let* () = eval_op top_op in
+      deref_stack ()
 
   and close_scope () =
     logf "[Shunting_yard] called close_scope\n";

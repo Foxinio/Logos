@@ -10,14 +10,6 @@ type node_tag = NodeTag of int
 
 let string_of_node_tag (NodeTag i) = Format.sprintf "%%node%i" i
 
-(* Tworzy świeży identyfikator *)
-let fresh_node_tag =
-  let next = ref 0 in
-  fun () ->
-    let r = !next in
-    next := r + 1;
-    NodeTag r
-
 exception InvalidToken of location * string
 
 let mkLocation (pos, _) =
