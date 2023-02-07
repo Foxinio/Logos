@@ -41,8 +41,9 @@
             ("}" , Operator(CloseScope));
         ]
 
-    let builtin_table =
+    let builtin_table : (string, token) Hashtbl.t =
         create_hashtable 11 [
+            ("if"       , If);
             ("fst"      , Builtin(Fst));
             ("snd"      , Builtin(Snd));
             ("readc"    , Builtin(Readc));
@@ -50,7 +51,6 @@
             ("at"       , Builtin(At));
             ("true"     , Bool(true));
             ("false"    , Bool(false));
-            ("if"       , If);
             ("is_number", Builtin(NumberPred));
             ("is_bool"  , Builtin(BoolPred));
             ("is_unit"  , Builtin(UnitPred));

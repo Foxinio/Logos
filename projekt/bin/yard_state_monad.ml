@@ -143,7 +143,7 @@ module Yard : S = struct
     let b =
       let* a = eval in
       let* () = dump_state in
-      logf "[Yard]  Finishing with success\n";
+      logf "[Yard] Finishing with success\n";
       return a
     in
     run env b

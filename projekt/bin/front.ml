@@ -31,7 +31,7 @@ let eval_file channel =
     Printf.printf "result of len: %d\n" @@ List.length res;
     Printf.printf "[[END]]\n";
     Printf.printf "[[Printing result]]\n";
-    to_string res display_results;
+    to_string res display_results_detailed;
     Printf.printf "[[END]]\n")
   else
     let lexed = lexer_to_list lexbuf in
@@ -51,7 +51,6 @@ let rec repl () =
 let eval_files () =
   let argc = List.length !Opts.files in
   if argc = 0 then (
-    Printf.printf "Using STD\n";
     repl ())
   else if argc = 1 then
     try eval_file @@ open_in @@ List.hd !Opts.files

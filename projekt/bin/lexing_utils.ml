@@ -129,6 +129,20 @@ let string_of_tokenList ?(limit = 0) lst =
   in
   res
 
+let string_of_closure env iter =
+    Hashtbl.fold
+            (fun k v acc ->
+              let vstr =
+                match v with
+                | Closure (env1, _) when env1 == env ->
+                    "thisClosure([...], (...))"
+                | Closure (_, v) -> "vClosure([...], " ^ iter v ^ ")"
+                | _ -> iter v
+              in
+              let s = k ^ " : " ^ vstr in
+              if acc = "" then s else acc ^ ", " ^ s)
+            env ""
+
 let string_of_value v =
   let rec iter = function
     | Number n -> "vNumber(" ^ string_of_int n ^ ")"
@@ -141,22 +155,35 @@ let string_of_value v =
         "vLambda(" ^ v ^ " -> [" ^ str ^ "])"
     | Closure (env, v) ->
         "vClosure(["
-        ^ Hashtbl.fold
-            (fun k v acc ->
-              let vstr =
-                match v with
-                | Closure (env1, _) when env1 == env ->
-                    "thisClosure([...], (...))"
-                | Closure (_, v) -> "vClosure([...], " ^ iter v ^ ")"
-                | _ -> iter v
-              in
-              let s = k ^ " : " ^ vstr in
-              if acc = "" then s else acc ^ ", " ^ s)
-            env ""
+        ^ string_of_closure env iter
         ^ "]" ^ "," ^ iter v ^ ")"
-    | ScopeBorder -> "<Scope_Boarder>"
+    | Builtin b -> "vBuiltin("^string_of_builtin b^")"
+    | ScopeBorder -> "vScope_Boarder()"
   in
   iter v
+
+let display_results_detailed v =
+  let rec iter v =
+    match v with
+    | Number n -> string_of_int n
+    | Unit -> "()"
+    | Bool b -> string_of_bool b
+    | Id id -> id
+    | Pair ((Pair _ as p1), v2) -> Printf.sprintf "(%s),%s" (iter p1) (iter v2)
+    | Pair (v1, v2) -> Printf.sprintf "%s,%s" (iter v1) (iter v2)
+    | Lambda (var, body) -> "<lambda:" ^ iter_lambda var body ^ ">"
+    | Closure (env, value) -> "<closure:["^ string_of_closure env iter ^ "]:" ^ iter value ^ ">"
+    | Builtin b -> "<builtin:"^string_of_builtin b^">"
+    | ScopeBorder -> "<Internal_error>"
+  and iter_lambda var (body : token list) =
+    var ^ "->"
+    ^
+    match body with
+    | Id id :: Operator Binding :: body -> iter_lambda id body
+    | _ -> "(...)"
+  in
+  match v with Pair _ -> "(" ^ iter v ^ ")" | _ -> iter v
+
 
 let display_results v =
   let rec iter v =
@@ -167,15 +194,10 @@ let display_results v =
     | Id id -> id
     | Pair ((Pair _ as p1), v2) -> Printf.sprintf "(%s),%s" (iter p1) (iter v2)
     | Pair (v1, v2) -> Printf.sprintf "%s,%s" (iter v1) (iter v2)
-    | Lambda (var, body) -> "<lambda:" ^ iter_lambda var body ^ ">"
-    | Closure (_, value) -> "<closure:" ^ iter value ^ ">"
+    | Lambda _ -> "<lambda>"
+    | Closure _ -> "<closure>"
+    | Builtin _ -> "<builtin>"
     | ScopeBorder -> "<Internal_error>"
-  and iter_lambda var (body : token list) =
-    var ^ "->"
-    ^
-    match body with
-    | Id id :: Operator Binding :: body -> iter_lambda id body
-    | _ -> "(...)"
   in
   match v with Pair _ -> "(" ^ iter v ^ ")" | _ -> iter v
 

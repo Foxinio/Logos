@@ -50,7 +50,7 @@ end = struct
           let* x = Yard.read_token in
           let* xs = prepare_one (Plain true) in
           Yard.return (x :: xs)
-      | Plain _, Operator (Boolean Not) | Plain _, Builtin _ ->
+      | Plain _, Operator (Boolean Not) ->
           let* x = Yard.read_token in
           let* xs = prepare_one (Plain false) in
           Yard.return (x :: xs)
@@ -149,7 +149,7 @@ end = struct
       let* stack = Yard.value_stack in
       rev_map deref_val stack
     in
-    List.rev @@ Yard.init lst eval
+    Yard.init lst eval
 
   and eval_iter () =
     logf "[Shunting_yard] called eval_iter\n";
@@ -236,58 +236,57 @@ end = struct
       | Builtin _ when tiktok -> Yard.return ()
       | Builtin b ->
           let* _ = Yard.read_token in
-          let* () = eval_builtin b in
+          let* () =
+            match b with
+            | Readc ->
+                (* TODO: Implement reading from stdin *)
+                (* For now always returns zero        *)
+                let res = Number 0 in
+                logf "[Shunting_yard:eval_builtin] evaling Readc -> %s\n"
+                @@ string_of_value res;
+                Yard.push_value res
+            | _ -> Yard.push_value @@ Builtin b
+          in
+          (* let* () = Yard.set_tiktok false in *)
           eval_iter ()
       | EOF -> Yard.return ()
 
-  and eval_builtin builtin =
+  and eval_builtin builtin arg =
     logf "[Shunting_yard] called eval_builtin with %s\n"
     @@ string_of_builtin builtin;
     match builtin with
     | Fst -> (
-        let* v = prepare_and_eval () in
         logf "[Shunting_yard:eval_builtin] evaling Fst with %s\n"
-        @@ string_of_value v;
-        match v with
+        @@ string_of_value arg;
+        match arg with
         | Pair (v, _) -> Yard.push_value v
-        | _ -> Yard.failwith @@ Errors.reportTypeError "Pair" v)
+        | _ -> Yard.failwith @@ Errors.reportTypeError "Pair" arg)
     | Snd -> (
-        let* v = prepare_and_eval () in
         logf "[Shunting_yard:eval_builtin] evaling Snd with %s\n"
-        @@ string_of_value v;
-        match v with
+        @@ string_of_value arg;
+        match arg with
         | Pair (_, v) -> Yard.push_value v
-        | _ -> Yard.failwith @@ Errors.reportTypeError "Pair" v)
-    | Readc ->
-        (* TODO: Implement reading from stdin *)
-        (* For now always returns zero        *)
-        let res = Number 0 in
-        logf "[Shunting_yard:eval_builtin] evaling Readc -> %s\n"
-        @@ string_of_value res;
-        Yard.push_value res
+        | _ -> Yard.failwith @@ Errors.reportTypeError "Pair" arg)
     | Writec -> (
-        let* v = prepare_and_eval () in
         logf "[Shunting_yard:eval_builtin] evaling Writec with %s\n"
-        @@ string_of_value v;
-        match v with
+        @@ string_of_value arg;
+        match arg with
         | Number n ->
-            Printf.printf "%c" (char_of_int (n mod 256));
+            Printf.printf "%c" @@ char_of_int @@ (n mod 256);
             Yard.return ()
         (* TODO: Maybe implement folding list to act like string *)
-        | _ -> Yard.failwith @@ Errors.reportTypeError "Number" v)
+        | _ -> Yard.failwith @@ Errors.reportTypeError "Number" arg)
     | At -> (
-        let* v = prepare_and_eval () in
         logf "[Shunting_yard:eval_builtin] evaling At with %s\n"
-        @@ string_of_value v;
+        @@ string_of_value arg;
         let* value_stack = Yard.value_stack in
-        match v with
+        match arg with
         | Number n -> Yard.push_value @@ ValueSeq.nth n value_stack
-        | _ -> Yard.failwith @@ Errors.reportTypeError "Number" v)
+        | _ -> Yard.failwith @@ Errors.reportTypeError "Number" arg)
     | NumberPred -> (
-        let* v = prepare_and_eval () in
         logf "[Shunting_yard:eval_builtin] evaling NumberPred with %s"
-        @@ string_of_value v;
-        match v with
+        @@ string_of_value arg;
+        match arg with
         | Number _ ->
             logf " -> true\n";
             Yard.push_value (Bool true)
@@ -295,10 +294,9 @@ end = struct
             logf " -> false\n";
             Yard.push_value (Bool false))
     | UnitPred -> (
-        let* v = prepare_and_eval () in
         logf "[Shunting_yard:eval_builtin] evaling UnitPred with %s"
-        @@ string_of_value v;
-        match v with
+        @@ string_of_value arg;
+        match arg with
         | Unit ->
             logf " -> true\n";
             Yard.push_value (Bool true)
@@ -306,10 +304,9 @@ end = struct
             logf " -> false\n";
             Yard.push_value (Bool false))
     | BoolPred -> (
-        let* v = prepare_and_eval () in
         logf "[Shunting_yard:eval_builtin] evaling BoolPred with %s"
-        @@ string_of_value v;
-        match v with
+        @@ string_of_value arg;
+        match arg with
         | Bool _ ->
             logf " -> true\n";
             Yard.push_value (Bool true)
@@ -317,16 +314,19 @@ end = struct
             logf " -> false\n";
             Yard.push_value (Bool false))
     | PairPred -> (
-        let* v = prepare_and_eval () in
         logf "[Shunting_yard:eval_builtin] evaling PairPred with %s"
-        @@ string_of_value v;
-        match v with
+        @@ string_of_value arg;
+        match arg with
         | Pair _ ->
             logf " -> true\n";
             Yard.push_value (Bool true)
         | _ ->
             logf " -> false\n";
             Yard.push_value (Bool false))
+    | Readc ->
+        Yard.failwith
+          ("This should be unreachable, encountered builtin: "
+         ^ string_of_builtin Readc)
 
   and eval_op op =
     logf "[Shunting_yard] called eval_op with %s\n" @@ string_of_operator op;
@@ -393,20 +393,36 @@ end = struct
         let* lhs = pop_derefed () in
         logf "[Shunting_yard:eval_op:Apply] evaluating %s $ %s\n"
           (string_of_value lhs) (string_of_value rhs);
-        match (lhs, rhs) with
-        | Lambda (var, body), _ ->
-            let env = Hashtbl.create 3 in
+        match lhs with
+        | Lambda (var, body) ->
+            let env = Hashtbl.create 7 in
             Hashtbl.add env var rhs;
             eval_lambda env body
-        | Closure (env, Lambda (var, body)), _ ->
+        | Closure (env, Lambda (var, body)) ->
             let env = Hashtbl.copy env in
             Hashtbl.add env var rhs;
             eval_lambda env body
-        | _ -> Yard.failwith @@ Errors.reportTypeError "Id" lhs)
+        | Builtin b -> eval_builtin b rhs
+        | _ -> Yard.failwith @@ Errors.reportTypeError "Evaluable" lhs)
     | _ ->
         Yard.failwith
           ("This should be unreachable, encountered op: "
          ^ string_of_operator op)
+
+  and eval_lambda env body =
+    logf "[Shunting_yard] called eval_lambda\n";
+    match body with
+    | Id id :: Operator Binding :: body ->
+        logf "[Shunting_yard:eval_lambda] no recursion this time\n";
+        let lambda = Lambda (id, body) in
+        Yard.push_value @@ Closure (env, lambda)
+    | _ ->
+        logf "[Shunting_yard:eval_lambda] entering recursion\n";
+        let* () = Yard.push_assign @@ ClosureEnv env in
+        let* () = eval_prepared body in
+        let* () = remove_closure_env () in
+        logf "[Shunting_yard:eval_lambda] recursion exited\n";
+        Yard.return ()
 
   and eval () =
     logf "[Shunting_yard] called eval\n";
@@ -428,33 +444,12 @@ end = struct
     let* () = finish_eval () in
     pop_derefed ()
 
-  and prepare_and_eval () =
-    logf "[Shunting_yard] called prepare_and_eval\n";
-    let* prepared = prepare () in
-    let* () = eval_prepared prepared in
-    pop_derefed ()
-
   and eval_prepared prepared =
     logf "[Shunting_yard] called eval_prepared with %s\n"
     @@ string_of_tokenList prepared;
     let+ () = (prepared, eval) in
     logf "[Shunting_yard:eval_prepared] finished evaling\n";
     Yard.return ()
-
-  and eval_lambda env body =
-    logf "[Shunting_yard] called eval_lambda\n";
-    match body with
-    | Id id :: Operator Binding :: body ->
-        logf "[Shunting_yard:eval_lambda] no recursion this time\n";
-        let lambda = Lambda (id, body) in
-        Yard.push_value @@ Closure (env, lambda)
-    | _ ->
-        logf "[Shunting_yard:eval_lambda] entering recursion\n";
-        let* () = Yard.push_assign @@ ClosureEnv env in
-        let* () = eval_prepared body in
-        let* () = remove_closure_env () in
-        logf "[Shunting_yard:eval_lambda] recursion exited\n";
-        Yard.return ()
 
   and remove_closure_env () =
     logf "[Shunting_yard] called remove_closure_env\n";
