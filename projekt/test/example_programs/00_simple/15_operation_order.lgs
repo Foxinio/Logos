@@ -1,0 +1,17 @@
+{
+	writec$'a'
+	writec$'b'
+	writec$'c'
+}
+
+{
+	writec$'d'
+	writec$'e';
+	writec$'f'
+}
+
+{
+	writec$'g';
+	writec$'h'
+	writec$'i';
+}
