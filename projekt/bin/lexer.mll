@@ -56,6 +56,17 @@
             ("is_unit"  , Builtin(UnitPred));
             ("is_pair"  , Builtin(PairPred));
         ]
+
+    let escape_char_table =
+        create_hashtable 7 [
+            ("\\0", "\x00");
+            ("\\t", "\t");
+            ("\\n", "\n");
+            ("\\r", "\r");
+            ("\\\"", "\"");
+            ("\\'", "'");
+            ("\\\\", "\\")
+        ]
 }
 
     let identifier = ['a'-'z' 'A'-'Z' '_']+
@@ -64,7 +75,7 @@
                     | "==" | "<>" | "<=" | ">=" | "->" | "&&" | "||"
     let whitespace = ['\t' ' ']
     let char_literal   = [' '-'[' ']'-'~']
-    let escape_char    = '\\' ['0' 't' 'n' 'r' '"' ''' '\\'] | '\\' ['0'-'7'] ['0'-'7'] ['0'-'7']
+    let escape_char    = '\\' ['0' 't' 'n' 'r' '"' ''' '\\']
 
     rule token = parse
       | ['\n']
@@ -79,9 +90,18 @@
       | "()"
       { Unit }
 
-      | ''' ( (char_literal) as c ) '''
+      | ''' ( '\\' (['0'-'7'] ['0'-'7'] ['0'-'7']) as str) '''
       {
-         Number(int_of_char c)
+          let i = String.fold_left (fun acc c -> acc + (int_of_char c) - (int_of_char '0')) 0 str in
+          Number i
+      }
+
+      | ''' ( (char_literal|escape_char) as c ) '''
+      {
+          Number( int_of_char @@ (String.get (try
+              Hashtbl.find escape_char_table c
+          with Not_found ->
+              c) 0))
       }
 
       | identifier as id

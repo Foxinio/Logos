@@ -15,3 +15,5 @@
 	writec$'h'
 	writec$'i';
 }
+
+writec$'\n'

@@ -47,10 +47,10 @@ module type S = sig
   val value_stack : valueList t
   (** view value stack *)
 
-  val get_tiktok : bool t
+  val get_tiktok : bool option t
   (** get tiktok state *)
 
-  val set_tiktok : bool -> unit t
+  val set_tiktok : bool option -> unit t
   (** set tiktok state *)
 
   val failwith : string -> 'a t
@@ -66,9 +66,17 @@ let to_string lst to_string =
       ^ to_string t)
     "" lst
 
+let string_of_opt_bool = function
+  | Some b -> "Some(" ^ string_of_bool b ^ ")"
+  | None -> "None"
+
 module Yard : S = struct
   type yard = {
-    tiktok : bool;
+    (* tiktok signals what came before,
+       true means value,
+       false means operator,
+       none means nothing *)
+    tiktok : bool option;
     value_stack : valueList;
     operator_stack : operatorList;
     assignment_stack : assignment list;
@@ -110,13 +118,13 @@ module Yard : S = struct
       "[Yard]=======================================\n\
        [Yard] State Dump:\n\
        [Yard]  Token Stack:     \n\
-      \t[%s]\n\
+       \t[%s]\n\
        [Yard]  Operator Stack:  \n\
-      \t[%s]\n\
+       \t[%s]\n\
        [Yard]  Value Stack:     \n\
-      \t[%s]\n\
+       \t[%s]\n\
        [Yard]  Assignment Stack:\n\
-      \t[%s]\n\
+       \t[%s]\n\
        [Yard]=======================================\n"
       token_string operator_string value_string assignment_string;
     return ()
@@ -137,7 +145,7 @@ module Yard : S = struct
         operator_stack = [];
         assignment_stack = [];
         token_iterator = lexbuf;
-        tiktok = false;
+        tiktok = None;
       }
     in
     let b =
@@ -160,12 +168,12 @@ module Yard : S = struct
 
   and get_tiktok =
     let* { tiktok; _ } = get in
-    logf "[Yard] called get_tiktok -> %b\n" tiktok;
+    logf "[Yard] called get_tiktok -> %s\n" @@ string_of_opt_bool tiktok;
     return tiktok
 
   and set_tiktok state =
     let* env = get in
-    logf "[Yard] called set_tiktok with %s\n" @@ string_of_bool state;
+    logf "[Yard] called set_tiktok with %s\n" @@ string_of_opt_bool state;
     set { env with tiktok = state }
 
   and eval_with (lst, trans) cont =
@@ -187,12 +195,12 @@ module Yard : S = struct
   and push_value x =
     let* ({ value_stack; _ } as env) = get in
     logf "[Yard] called push_value with %s\n" @@ string_of_value x;
-    set { env with value_stack = x :: value_stack; tiktok = true }
+    set { env with value_stack = x :: value_stack; tiktok = Some true }
 
   and push_op op =
     let* ({ operator_stack; _ } as env) = get in
     logf "[Yard] called push_op with %s\n" @@ string_of_operator op;
-    set { env with operator_stack = op :: operator_stack; tiktok = false }
+    set { env with operator_stack = op :: operator_stack; tiktok = Some false }
 
   and push_assign assign =
     let* ({ assignment_stack; _ } as env) = get in
