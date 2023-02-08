@@ -11,3 +11,5 @@ fn = a -> b -> a+b
 map_b
 
 map_b $ (1,2,3,4,())
+
+//@result: 7, <closure>, <closure>, (1,4,9,16,())

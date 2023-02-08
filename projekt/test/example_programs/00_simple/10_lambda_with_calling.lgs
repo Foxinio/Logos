@@ -2,3 +2,5 @@ m=a->a+1;
 m
 a=5;
 m$1
+
+//@result: <lambda>, 2

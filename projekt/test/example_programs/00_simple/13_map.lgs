@@ -4,3 +4,5 @@ map_inc = (fn -> list ->
         list) $ (i -> i * 2);
 
 map_inc $ (1,2,3,4,())
+
+//@result: (2,4,6,8,())

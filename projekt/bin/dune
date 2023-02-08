@@ -11,5 +11,3 @@
         (flags (:standard -w -39-33-26-27))
     )
 )
-
-(ocamllex lexer)

@@ -6,3 +6,7 @@ fib$3
 fib$4
 fib$5
 fib$6
+fib$7
+fib$8
+
+//@result: 1, 1, 2, 3, 5, 8, 13, 21
