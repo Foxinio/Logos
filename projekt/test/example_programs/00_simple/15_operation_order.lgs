@@ -3,13 +3,17 @@
 	writec$'b'
 	writec$'c'
 }
+
 writec$' ';
+
 {
 	writec$'d'
 	writec$'e';
 	writec$'f'
 }
+
 writec$' ';
+
 {
 	writec$'g';
 	writec$'h'
@@ -17,3 +21,5 @@ writec$' ';
 }
 
 writec$'\n'
+
+//@result: 7, <closure>, <closure>, (1,4,9,16,())

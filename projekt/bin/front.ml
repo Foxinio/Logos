@@ -2,8 +2,13 @@ open Projekt
 open Lexer
 open Lexing_utils
 open Lexing_types
+open Front_utils
 module Opts = Argopts.Make ()
 module Shunting_yard = Shunting_yard.Make (Yard_state_monad.Yard)
+
+let to_string lst printer =
+  let s = to_string lst printer in
+  if s <> "" then Printf.printf "%s\n" s
 
 let lexer_to_list lexbuf =
   let rec iter acc =
@@ -11,19 +16,6 @@ let lexer_to_list lexbuf =
     match t with EOF -> List.rev acc | _ -> iter (t :: acc)
   in
   iter []
-
-let to_string lst to_string =
-  let lst = List.map to_string lst in
-  let max =
-    List.fold_left (fun acc t -> Int.max acc @@ String.length t) 0 lst
-  in
-  let s =
-    if max > 15 then
-      List.fold_left (fun s t -> s ^ (if s = "" then "" else ",\n") ^ t) "" lst
-    else
-      List.fold_left (fun s t -> s ^ (if s = "" then "" else ", ") ^ t) "" lst
-  in
-  if s <> "" then Printf.printf "%s\n" s
 
 let eval_file channel =
   let lexbuf = Lexing.from_channel channel in

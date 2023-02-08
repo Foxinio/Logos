@@ -1,5 +1,6 @@
 open Lexing_utils
 open Lexing_types
+open StateMonad
 open Logf
 
 module type S = sig
@@ -57,15 +58,6 @@ module type S = sig
   (** failwith error *)
 end
 
-let to_string lst to_string =
-  List.fold_left
-    (fun s t ->
-      let ts = to_string t in
-      s
-      ^ (if s = "" then "" else if String.length ts > 20 then ";\n\t" else ", ")
-      ^ to_string t)
-    "" lst
-
 let string_of_opt_bool = function
   | Some b -> "Some(" ^ string_of_bool b ^ ")"
   | None -> "None"
@@ -91,22 +83,22 @@ module Yard : S = struct
 
   let string_of_token_stack =
     let* { token_iterator; _ } = get in
-    let s = to_string token_iterator string_of_token in
+    let s = to_string ~fold:false token_iterator string_of_token in
     return s
 
   let string_of_value_stack =
     let* { value_stack; _ } = get in
-    let s = to_string value_stack string_of_value in
+    let s = to_string ~line_prefix:"\t " value_stack string_of_value in
     return s
 
   let string_of_assign_stack =
     let* { assignment_stack; _ } = get in
-    let s = to_string assignment_stack string_of_assign in
+    let s = to_string ~line_prefix:"\t " assignment_stack string_of_assign in
     return s
 
   let string_of_operator_stack =
     let* { operator_stack; _ } = get in
-    let s = to_string operator_stack string_of_operator in
+    let s = to_string ~line_prefix:"\t " operator_stack string_of_operator in
     return s
 
   let dump_state =
@@ -117,14 +109,14 @@ module Yard : S = struct
     logf
       "[Yard]=======================================\n\
        [Yard] State Dump:\n\
-       [Yard]  Token Stack:     \n\
-       \t[%s]\n\
-       [Yard]  Operator Stack:  \n\
-       \t[%s]\n\
-       [Yard]  Value Stack:     \n\
-       \t[%s]\n\
-       [Yard]  Assignment Stack:\n\
-       \t[%s]\n\
+       [Yard] Token Stack:     [\n\
+       \t %s]\n\
+       [Yard] Operator Stack:  [\n\
+       \t %s]\n\
+       [Yard] Value Stack:     [\n\
+       \t %s]\n\
+       [Yard] Assignment Stack:[\n\
+       \t %s]\n\
        [Yard]=======================================\n"
       token_string operator_string value_string assignment_string;
     return ()

@@ -1,0 +1,22 @@
+return = 
+	x -> cont ->
+		cont $ x;
+bind =
+	m -> f -> cont -> 
+		m $ (x -> f $ x $ cont);
+
+get =
+	cont -> s ->
+		cont $ s $ s;
+
+set =
+	s -> cont -> _ ->
+		cont $ () $ s;
+
+run =
+	s -> m ->
+		fst $ (m $ (a -> s -> a,s) $ s);
+
+e = c -> bind $ c $ (x -> set $ (x*5));
+
+run $ 5 $ (e $ get)

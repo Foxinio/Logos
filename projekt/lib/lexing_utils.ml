@@ -18,6 +18,21 @@ let mkLocation (pos, _) =
   let file = pos.Lexing.pos_fname in
   Location { line; column; file }
 
+let to_string ?(line_prefix = "") ?(fold=true) lst to_string =
+  let lst = List.map to_string lst in
+  let max, sum =
+    List.fold_left (fun (max, sum) t -> let len = String.length t in Int.max max len, len+sum) (0,0) lst
+  in
+  let s =
+    if (max > 15 || sum > 50) && fold then
+      List.fold_left
+        (fun s t -> s ^ (if s = "" then "" else ",\n" ^ line_prefix) ^ t)
+        "" lst
+    else
+      List.fold_left (fun s t -> s ^ (if s = "" then "" else ", ") ^ t) "" lst
+  in
+  s
+
 let string_of_relop = function
   | Equals -> "=="
   | NotEquals -> "<>"
@@ -122,81 +137,45 @@ let string_of_tokenList ?(limit = 0) lst =
   res
 
 let string_of_closure env iter =
-    Hashtbl.fold
-            (fun k v acc ->
-              let vstr =
-                match v with
-                | Closure (env1, _) when env1 == env ->
-                    "thisClosure([...], (...))"
-                | Closure (_, v) -> "vClosure([...], " ^ iter v ^ ")"
-                | _ -> iter v
-              in
-              let s = k ^ " : " ^ vstr in
-              if acc = "" then s else acc ^ ", " ^ s)
-            env ""
+  Hashtbl.fold
+    (fun k v acc ->
+      let vstr =
+        match v with
+        | Closure (env1, _) when env1 == env -> "thisClosure([...], (...))"
+        | Closure (_, v) -> "vClosure([...], " ^ iter v ^ ")"
+        | _ -> iter v
+      in
+      let s = k ^ " : " ^ vstr in
+      if acc = "" then s else acc ^ ", " ^ s)
+    env ""
 
-let string_of_value v =
-  let rec iter = function
+let string_of_value ?(extended_lambda=true) v =
+  let rec iter extended_lambda = function
     | Number n -> "vNumber(" ^ string_of_int n ^ ")"
     | Bool b -> "vBool(" ^ string_of_bool b ^ ")"
     | Id id -> "vId(" ^ id ^ ")"
     | Unit -> "vUnit()"
-    | Pair (v1, v2) -> "vPair(" ^ iter v1 ^ ", " ^ iter v2 ^ ")"
+    | Pair (v1, v2) -> "vPair(" ^ iter extended_lambda v1 ^ ", " ^ iter extended_lambda v2 ^ ")"
     | Lambda (v, lst) ->
-        let str = string_of_tokenList ~limit:5 lst in
-        "vLambda(" ^ v ^ " -> [" ^ str ^ "])"
+        "vLambda(" ^ iter_lambda extended_lambda v lst ^")"
     | Closure (env, v) ->
-        "vClosure(["
-        ^ string_of_closure env iter
-        ^ "]" ^ "," ^ iter v ^ ")"
-    | Builtin b -> "vBuiltin("^string_of_builtin b^")"
+        "vClosure([" ^ string_of_closure env (iter false) ^ "]" ^ "," ^ iter extended_lambda v ^ ")"
+    | Builtin b -> "vBuiltin(" ^ string_of_builtin b ^ ")"
     | ScopeBorder -> "vScope_Boarder()"
-  in
-  iter v
-
-let display_results_detailed v =
-  let rec iter v =
-    match v with
-    | Number n -> string_of_int n
-    | Unit -> "()"
-    | Bool b -> string_of_bool b
-    | Id id -> id
-    | Pair ((Pair _ as p1), v2) -> Printf.sprintf "(%s),%s" (iter p1) (iter v2)
-    | Pair (v1, v2) -> Printf.sprintf "%s,%s" (iter v1) (iter v2)
-    | Lambda (var, body) -> "<lambda:" ^ iter_lambda var body ^ ">"
-    | Closure (env, value) -> "<closure:["^ string_of_closure env iter ^ "]:" ^ iter value ^ ">"
-    | Builtin b -> "<builtin:"^string_of_builtin b^">"
-    | ScopeBorder -> "<Internal_error>"
-  and iter_lambda var (body : token list) =
+  and iter_lambda extended_lambda var (body : token list) =
     var ^ "->"
     ^
     match body with
-    | Id id :: Operator Binding :: body -> iter_lambda id body
-    | _ -> "(...)"
+    | Id id :: Operator Binding :: body -> iter_lambda extended_lambda id body
+    | _ when extended_lambda -> "{"^ string_of_tokenList ~limit:5 body^"}"
+    | _ -> "{...}"
   in
-  match v with Pair _ -> "(" ^ iter v ^ ")" | _ -> iter v
-
-
-let display_results v =
-  let rec iter v =
-    match v with
-    | Number n -> string_of_int n
-    | Unit -> "()"
-    | Bool b -> string_of_bool b
-    | Id id -> id
-    | Pair ((Pair _ as p1), v2) -> Printf.sprintf "(%s),%s" (iter p1) (iter v2)
-    | Pair (v1, v2) -> Printf.sprintf "%s,%s" (iter v1) (iter v2)
-    | Lambda _ -> "<lambda>"
-    | Closure _ -> "<closure>"
-    | Builtin _ -> "<builtin>"
-    | ScopeBorder -> "<Internal_error>"
-  in
-  match v with Pair _ -> "(" ^ iter v ^ ")" | _ -> iter v
+  iter extended_lambda v
 
 let string_of_assign = function
   | Assign (s, v) -> s ^ " : " ^ string_of_value v
   | ClosureEnv env ->
-      "["
+      "Env["
       ^ Hashtbl.fold
           (fun k v acc ->
             let s = k ^ " : " ^ string_of_value v in

@@ -396,15 +396,26 @@ end = struct
         let* rhs = pop_derefed () in
         let* lhs = pop_derefed () in
         logf "[Shunting_yard:eval_op:Apply] evaluating %s $ %s\n"
-          (string_of_value lhs) (string_of_value rhs);
+          (string_of_value ~extended_lambda:false lhs)
+          (string_of_value ~extended_lambda:false rhs);
         match lhs with
         | Lambda (var, body) ->
             let env = Hashtbl.create 7 in
+            logf
+              "[Shunting_yard:eval_op:Apply:Lambda] extending env by [%s : %s]\n"
+              var (string_of_value rhs);
             Hashtbl.add env var rhs;
+            logf "[Shunting_yard:eval_op:Apply:Lambda] env after: [%s]\n"
+              (string_of_closure env (string_of_value ~extended_lambda:false));
             eval_lambda env body
         | Closure (env, Lambda (var, body)) ->
             let env = Hashtbl.copy env in
+            logf
+              "[Shunting_yard:eval_op:Apply:Closure] extending env by [%s : %s]\n"
+              var (string_of_value rhs);
             Hashtbl.add env var rhs;
+            logf "[Shunting_yard:eval_op:Apply:Closure] env after: [%s]\n"
+              (string_of_closure env (string_of_value ~extended_lambda:false));
             eval_lambda env body
         | Builtin b -> eval_builtin b rhs
         | _ -> Yard.failwith @@ Errors.reportTypeError "Evaluable" lhs)
@@ -414,7 +425,9 @@ end = struct
          ^ string_of_operator op)
 
   and eval_lambda env body =
-    logf "[Shunting_yard] called eval_lambda\n";
+    logf "[Shunting_yard] called eval_lambda with env: %s; body: %s\n"
+      (string_of_closure env (string_of_value ~extended_lambda:false))
+      (string_of_tokenList ~limit:5 body);
     match body with
     | Id id :: Operator Binding :: body ->
         logf "[Shunting_yard:eval_lambda] no recursion this time\n";
@@ -483,7 +496,7 @@ end = struct
         in
         match List.find_map pred assignment_stack with
         | Some v -> Yard.return v
-        | None -> Yard.failwith "Referenced undefined variable")
+        | None -> Yard.failwith ("Referenced undefined variable: " ^ id))
     | _ -> Yard.return var
 
   and close_bracket () =
@@ -526,7 +539,9 @@ end = struct
       let* next_value = Yard.pop_value in
       let* () =
         if next_value = ScopeBorder then (
-          logf "[Shunting_yard:deref_stack] encountered ScopeBorder, ending recursion\n";
+          logf
+            "[Shunting_yard:deref_stack] encountered ScopeBorder, ending \
+             recursion\n";
           Yard.return ())
         else (
           logf "[Shunting_yard:deref_stack] entering recursion\n";
