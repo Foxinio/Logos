@@ -12,55 +12,69 @@ let lexer_to_list lexbuf =
   iter []
 
 let to_string lst to_string =
+  let lst = List.map to_string lst in
+  let max =
+    List.fold_left (fun acc t -> Int.max acc @@ String.length t) 0 lst
+  in
   let s =
-    List.fold_left
-      (fun s t -> s ^ (if s = "" then "" else ", ") ^ to_string t)
-      "" lst
+    if max > 15 then
+      List.fold_left (fun s t -> s ^ (if s = "" then "" else ",\n") ^ t) "" lst
+    else
+      List.fold_left (fun s t -> s ^ (if s = "" then "" else ", ") ^ t) "" lst
   in
   if s <> "" then Printf.printf "%s\n" s
 
 let eval_file channel =
   let lexbuf = Lexing.from_channel channel in
-  if !Opts.extra_debug then (
+  let printer =
+    if !Opts.print_detail then display_results_detailed else display_results
+  in
+  let lexed = lexer_to_list lexbuf in
+  if !Opts.print_lexer then (
     Printf.printf "[[Lexing]]\n";
-    let lexed = lexer_to_list lexbuf in
     to_string lexed string_of_token;
-    Printf.printf "[[END]]\n";
-    Printf.printf "[[Executing]]\n";
-    let res = Shunting_yard.run lexed in
-    Printf.printf "result of len: %d\n" @@ List.length res;
-    Printf.printf "[[END]]\n";
-    Printf.printf "[[Printing result]]\n";
-    to_string res display_results_detailed;
-    Printf.printf "[[END]]\n")
-  else
-    let lexed = lexer_to_list lexbuf in
-    let res = Shunting_yard.run lexed in
-    to_string res display_results
+    Printf.printf "[[END]]\n");
+  let res = Shunting_yard.run lexed in
+  to_string res printer
+
+let eval_string s =
+  let lexed = lexer_to_list @@ Lexing.from_string s in
+  let res = Shunting_yard.run lexed in
+  to_string res display_results
 
 let rec repl () =
   Printf.printf "#";
   let line = try read_line () with End_of_file -> "exit" in
-  if line = "exit" || line = "quit" then Printf.printf "\n"
-  else
-    let lexed = lexer_to_list @@ Lexing.from_string line in
-    let res = Shunting_yard.run lexed in
-    to_string res display_results;
-    repl ()
+  if line = "exit" || line = "quit" then Printf.printf "\n" else repl ()
 
-let eval_files () =
-  let argc = List.length !Opts.files in
-  if argc = 0 then (
-    repl ())
-  else if argc = 1 then
-    try eval_file @@ open_in @@ List.hd !Opts.files
-    with Sys_error s -> Printf.eprintf "%s\n%!" s
-  else
-    let f () arg =
-      try
-        let channel = open_in arg in
-        Printf.printf "%s:\n" arg;
-        eval_file channel
-      with Sys_error s -> Printf.eprintf "%s\n%!" s
-    in
-    List.fold_left f () !Opts.files
+let eval_files files =
+  let f () arg =
+    try
+      let channel = open_in arg in
+      Printf.printf "%s:\n" arg;
+      eval_file channel
+    with
+    | Sys_error s -> Printf.eprintf "%s\n%!" s
+    | exc -> Printf.eprintf "Other error: %s" @@ Printexc.to_string exc
+  in
+  List.fold_left f () !Opts.files
+
+let eval () =
+  let b =
+    if List.length !Opts.to_eval > 0 then (
+      List.fold_left (fun () expr -> eval_string expr) () !Opts.to_eval;
+      true)
+    else false
+  in
+  let b =
+    let len = List.length !Opts.files in
+    if len = 1 then (
+      (try eval_file @@ open_in @@ List.hd !Opts.files
+       with Sys_error s -> Printf.eprintf "%s\n%!" s);
+      true)
+    else if len > 1 then (
+      eval_files !Opts.files;
+      true)
+    else b
+  in
+  if not b then repl ()

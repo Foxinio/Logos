@@ -2,18 +2,28 @@ open Getopts
 
 module Make () : sig
   val files : string list ref
-  val extra_debug : bool ref
+  val to_eval : string list ref
+  val print_detail : bool ref
+  val print_lexer : bool ref
   val parse_argv : unit -> unit
 end = struct
   let files = ref []
-  let extra_debug = ref false
+  let to_eval = ref []
+  let print_detail = ref false
+  let print_lexer = ref false
 
   let spec =
-    Getopts.spec "[-g][--][files]" "Logos iterpreter"
+    Getopts.spec "[-gle:][--][files]" "Logos iterpreter"
       [
         Getopts.flag 'g'
-          (fun () -> extra_debug := true)
+          (fun () -> print_detail := true)
           "Print extra debug info";
+        Getopts.flag 'l'
+          (fun () -> print_lexer := true)
+          "Print lexer output";
+        Getopts.string 'e'
+          (fun s () -> to_eval := s :: !to_eval)
+          "eval expressions given from command argument";
       ]
       (Getopts.queue files)
       [ Getopts.note "AUTHOR" "Szymon Jędras" ]

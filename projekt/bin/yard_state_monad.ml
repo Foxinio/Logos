@@ -189,6 +189,7 @@ module Yard : S = struct
     let* ({ token_iterator; _ } as env) = get in
     logf "[Yard] called read_token -> %s\n"
     @@ string_of_token @@ TokenSeq.hd token_iterator;
+    let* () = dump_state in
     let* () = set { env with token_iterator = TokenSeq.tl token_iterator } in
     return @@ TokenSeq.hd token_iterator
 

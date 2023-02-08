@@ -168,7 +168,6 @@ end = struct
     | Operator (Boolean Not as op), _ ->
         let* _ = Yard.read_token in
         let* () = try_push_op op in
-        let* () = Yard.set_tiktok None in
         eval_iter ()
     | Operator Semi, Some true ->
         let* _ = Yard.read_token in
@@ -177,15 +176,22 @@ end = struct
         Yard.failwith @@ Errors.reportOperatorCumulation
     | Operator Semi, None ->
         Yard.failwith @@ Errors.reportUnexpectedToken "Value" t
-    | Operator Binding, Some false ->
+    | Operator Binding, Some true ->
         let* _ = Yard.read_token in
         let* _ = handle_binding () in
         eval_iter ()
-    | Operator CloseBracket, Some false ->
+    | Operator CloseBracket, Some true ->
         let* _ = Yard.read_token in
         let* () = close_bracket () in
         eval_iter ()
-    | Operator CloseScope, None | Operator CloseScope, Some true ->
+    | Operator CloseScope, None ->
+        let* _ = Yard.read_token in
+        let* op = Yard.pop_op in
+        assert (op = StackSeparator);
+        let* () = deref_stack () in
+        let* () = close_scope () in
+        eval_iter ()
+    | Operator CloseScope, Some true ->
         let* _ = Yard.read_token in
         let* () = deref_stack () in
         let* () = close_scope () in
@@ -233,7 +239,7 @@ end = struct
           | Readc ->
               (* TODO: Implement reading from stdin *)
               (* For now always returns zero        *)
-              let res = Number 0 in
+              let res = Scanf.scanf "%c" (fun c -> Number (int_of_char c)) in
               logf "[Shunting_yard:eval_builtin] evaling Readc -> %s\n"
               @@ string_of_value res;
               Yard.push_value res
@@ -428,7 +434,6 @@ end = struct
       let* () = Yard.push_op StackSeparator in
       let* () = Yard.set_tiktok None in
       let* () = eval_iter () in
-      let* () = finish_eval () in
       let* t = Yard.peek_token in
       match t with EOF -> Yard.return () | _ -> iter ()
     in
@@ -515,16 +520,20 @@ end = struct
   and deref_stack () =
     logf "[Shunting_yard] called deref_stack\n";
     let* top_op = Yard.pop_op in
-    if top_op = StackSeparator then
+    if top_op = StackSeparator then (
+      logf "[Shunting_yard:deref_stack] encountered StackSeparator\n";
       let* value = pop_derefed () in
       let* next_value = Yard.pop_value in
       let* () =
-        if next_value = ScopeBorder then Yard.return ()
-        else
+        if next_value = ScopeBorder then (
+          logf "[Shunting_yard:deref_stack] encountered ScopeBorder, ending recursion\n";
+          Yard.return ())
+        else (
+          logf "[Shunting_yard:deref_stack] entering recursion\n";
           let* () = Yard.push_value next_value in
-          deref_stack ()
+          deref_stack ())
       in
-      Yard.push_value value
+      Yard.push_value value)
     else if top_op = OpenBracket then
       Yard.failwith @@ Errors.reportUnclosedBracketWhileFolding
     else
@@ -546,7 +555,6 @@ end = struct
     let* () = finish_eval () in
     logf "[Shunting_yard:handle_semicolon] poping value\n";
     let* _ = Yard.pop_value in
-    let* () = Yard.push_op StackSeparator in
     Yard.set_tiktok None
 
   and handle_binding () =

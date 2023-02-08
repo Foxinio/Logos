@@ -3,13 +3,13 @@
 	writec$'b'
 	writec$'c'
 }
-
+writec$' ';
 {
 	writec$'d'
 	writec$'e';
 	writec$'f'
 }
-
+writec$' ';
 {
 	writec$'g';
 	writec$'h'
