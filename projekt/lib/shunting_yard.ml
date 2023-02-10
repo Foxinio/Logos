@@ -281,11 +281,18 @@ end = struct
             logf "\n";
             Yard.failwith @@ Errors.reportTypeError "Number" arg)
     | At -> (
+        let rec nth n (lst : value list) =
+          match lst with
+          | [] -> Unit
+          | ScopeBorder :: lst -> nth n lst
+          | x :: _ when n = 0 -> x
+          | _ :: lst -> nth (n - 1) lst
+        in
         logf "[Shunting_yard:eval_builtin] evaling At with %s\n"
         @@ string_of_value arg;
         let* value_stack = Yard.value_stack in
         match arg with
-        | Number n -> Yard.push_value @@ ValueSeq.nth n value_stack
+        | Number n -> Yard.push_value @@ nth n value_stack
         | _ -> Yard.failwith @@ Errors.reportTypeError "Number" arg)
     | NumberPred -> (
         logf "[Shunting_yard:eval_builtin] evaling NumberPred with %s"
@@ -378,15 +385,15 @@ end = struct
         match (lhs, rhs) with
         | Id var, (Lambda _ as body) ->
             let env = Hashtbl.create 3 in
-            let clo = Closure (env, body) in
+            let clo = Closure (var, env, body) in
             Hashtbl.add env var clo;
             let* () = Yard.push_assign @@ Assign (var, clo) in
             Yard.push_value clo
-        | Id var, Closure (env, body) ->
+        | Id var1, Closure (var2, env, body) ->
             let new_env = Hashtbl.copy env in
-            let clo = Closure (new_env, body) in
-            Hashtbl.add new_env var clo;
-            let* () = Yard.push_assign @@ Assign (var, clo) in
+            let clo = Closure (var1 ^ "$" ^ var2, new_env, body) in
+            Hashtbl.replace new_env var1 clo;
+            let* () = Yard.push_assign @@ Assign (var1, clo) in
             Yard.push_value clo
         | Id var, _ ->
             let* () = Yard.push_assign @@ Assign (var, rhs) in
@@ -402,21 +409,23 @@ end = struct
         | Lambda (var, body) ->
             let env = Hashtbl.create 7 in
             logf
-              "[Shunting_yard:eval_op:Apply:Lambda] extending env by [%s : %s]\n"
-              var (string_of_value rhs);
+              "[Shunting_yard:eval_op:Apply:Lambda] building clo<%s> with [%s \
+               : %s]\n"
+              var var (string_of_value rhs);
             Hashtbl.add env var rhs;
             logf "[Shunting_yard:eval_op:Apply:Lambda] env after: [%s]\n"
               (string_of_closure env (string_of_value ~extended_lambda:false));
-            eval_lambda env body
-        | Closure (env, Lambda (var, body)) ->
+            eval_lambda ("~" ^ var) env body
+        | Closure (s, env, Lambda (var, body)) ->
             let env = Hashtbl.copy env in
             logf
-              "[Shunting_yard:eval_op:Apply:Closure] extending env by [%s : %s]\n"
-              var (string_of_value rhs);
-            Hashtbl.add env var rhs;
+              "[Shunting_yard:eval_op:Apply:Closure] extending env of clo<%s> \
+               by [%s : %s]\n"
+              s var (string_of_value rhs);
+            Hashtbl.replace env var rhs;
             logf "[Shunting_yard:eval_op:Apply:Closure] env after: [%s]\n"
               (string_of_closure env (string_of_value ~extended_lambda:false));
-            eval_lambda env body
+            eval_lambda s env body
         | Builtin b -> eval_builtin b rhs
         | _ -> Yard.failwith @@ Errors.reportTypeError "Evaluable" lhs)
     | _ ->
@@ -424,32 +433,40 @@ end = struct
           ("This should be unreachable, encountered op: "
          ^ string_of_operator op)
 
-  and eval_lambda env body =
-    logf "[Shunting_yard] called eval_lambda with env: %s; body: %s\n"
+  and eval_lambda var env body =
+    logf "[Shunting_yard] called eval_lambda with clo<%s>.env: [%s]; body: %s\n"
+      var
       (string_of_closure env (string_of_value ~extended_lambda:false))
       (string_of_tokenList ~limit:5 body);
     match body with
     | Id id :: Operator Binding :: body ->
-        logf "[Shunting_yard:eval_lambda] no recursion this time\n";
+        logf "[Shunting_yard:eval_lambda] no recursion this time on clo<%s>\n"
+          var;
         let lambda = Lambda (id, body) in
-        Yard.push_value @@ Closure (env, lambda)
+        Yard.push_value @@ Closure (var, env, lambda)
     | _ ->
-        logf "[Shunting_yard:eval_lambda] entering recursion\n";
-        let* () = Yard.push_assign @@ ClosureEnv env in
+        logf "[Shunting_yard:eval_lambda] entering recursion of clo<%s>\n" var;
+        let* () = Yard.push_assign @@ ClosureEnv (var, env) in
         let* () = eval_prepared body in
         let* () = remove_closure_env () in
-        logf "[Shunting_yard:eval_lambda] recursion exited\n";
+        logf "[Shunting_yard:eval_lambda] recursion of clo<%s> exited\n" var;
         Yard.return ()
 
   and eval () =
-    logf "[Shunting_yard] called eval\n";
     let rec iter () =
       let* () = Yard.push_op StackSeparator in
       let* () = Yard.set_tiktok None in
       let* () = eval_iter () in
       let* t = Yard.peek_token in
-      match t with EOF -> Yard.return () | _ -> iter ()
+      match t with
+      | EOF ->
+          logf "[Shunting_yard:eval] ecountered EOF, finishing\n";
+          Yard.return ()
+      | _ ->
+          logf "[Shunting_yard:eval] no EOF continuing\n";
+          iter ()
     in
+    logf "[Shunting_yard] called eval\n";
     let* () = Yard.push_value ScopeBorder in
     let* () = iter () in
     deref_stack ()
@@ -490,12 +507,15 @@ end = struct
         let* assignment_stack = Yard.assignment_stack in
         let pred = function
           | Assign (s, v) when s = id -> Some v
-          | ClosureEnv env -> Hashtbl.find_opt env id
+          | ClosureEnv (_, env) -> Hashtbl.find_opt env id
           | Assign _ -> None
           | ScopeBorder -> None
         in
         match List.find_map pred assignment_stack with
-        | Some v -> Yard.return v
+        | Some v ->
+            logf "[Shunting_yard:deref_val] deref_val evaluated %s to %s\n" id
+              (string_of_value v);
+            Yard.return v
         | None -> Yard.failwith ("Referenced undefined variable: " ^ id))
     | _ -> Yard.return var
 
@@ -536,19 +556,25 @@ end = struct
     if top_op = StackSeparator then (
       logf "[Shunting_yard:deref_stack] encountered StackSeparator\n";
       let* value = pop_derefed () in
-      let* next_value = Yard.pop_value in
-      let* () =
-        if next_value = ScopeBorder then (
-          logf
-            "[Shunting_yard:deref_stack] encountered ScopeBorder, ending \
-             recursion\n";
-          Yard.return ())
-        else (
-          logf "[Shunting_yard:deref_stack] entering recursion\n";
-          let* () = Yard.push_value next_value in
-          deref_stack ())
-      in
-      Yard.push_value value)
+      if value = ScopeBorder then (
+        logf
+          "[Shunting_yard:deref_stack] encountered ScopeBorder on the first \
+           iteration\n";
+        Yard.return ())
+      else
+        let* next_value = Yard.pop_value in
+        let* () =
+          if next_value = ScopeBorder then (
+            logf
+              "[Shunting_yard:deref_stack] encountered ScopeBorder, ending \
+               recursion\n";
+            Yard.return ())
+          else (
+            logf "[Shunting_yard:deref_stack] entering recursion\n";
+            let* () = Yard.push_value next_value in
+            deref_stack ())
+        in
+        Yard.push_value value)
     else if top_op = OpenBracket then
       Yard.failwith @@ Errors.reportUnclosedBracketWhileFolding
     else

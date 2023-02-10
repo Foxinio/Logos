@@ -18,13 +18,19 @@ let mkLocation (pos, _) =
   let file = pos.Lexing.pos_fname in
   Location { line; column; file }
 
-let to_string ?(line_prefix = "") ?(fold=true) lst to_string =
+type fold_opt = No_fold | Default | Force_fold
+
+let to_string ?(line_prefix = "") ?(fold = Default) lst to_string =
   let lst = List.map to_string lst in
   let max, sum =
-    List.fold_left (fun (max, sum) t -> let len = String.length t in Int.max max len, len+sum) (0,0) lst
+    List.fold_left
+      (fun (max, sum) t ->
+        let len = String.length t in
+        (Int.max max len, len + sum))
+      (0, 0) lst
   in
   let s =
-    if (max > 15 || sum > 50) && fold then
+    if ((max > 15 || sum > 50) && fold <> No_fold) || fold = Force_fold then
       List.fold_left
         (fun s t -> s ^ (if s = "" then "" else ",\n" ^ line_prefix) ^ t)
         "" lst
@@ -125,41 +131,46 @@ let string_of_token = function
 
 let string_of_tokenList ?(limit = 0) lst =
   let llimit = if limit <= 0 then List.length lst else limit in
-  let _, res =
-    TokenSeq.fold_left
-      (fun (i, acc) t ->
-        if i > 0 then
-          (i - 1, (if acc = "" then "" else acc ^ ", ") ^ string_of_token t)
-        else if i = 0 then (-1, acc ^ ", ...")
-        else (i, acc))
-      (llimit, "") lst
-  in
-  res
+  TokenSeq.fold_left
+    (fun (i, acc) t ->
+      if i > 0 then
+        (i - 1, (if acc = "" then "" else acc ^ ", ") ^ string_of_token t)
+      else if i = 0 then (-1, acc ^ ", ...")
+      else (i, acc))
+    (llimit, "") lst
+  |> snd
 
-let string_of_closure env iter =
+let rec string_of_closure ?(max_depth = 5) env iter =
   Hashtbl.fold
     (fun k v acc ->
-      let vstr =
+      let s =
         match v with
-        | Closure (env1, _) when env1 == env -> "thisClosure([...], (...))"
-        | Closure (_, v) -> "vClosure([...], " ^ iter v ^ ")"
-        | _ -> iter v
+        | Closure (s, env1, _) when env1 == env -> "thisClosure(...)"
+        | Closure (s, _, _) when max_depth = 0 ->
+            k ^ " : maxClosure:" ^ s ^ "([...], (...))"
+        | Closure (s, env, v) ->
+            k ^ " : vClosure:" ^ s ^ "(["
+            ^ string_of_closure ~max_depth:(max_depth - 1) env iter
+            ^ "], " ^ iter v ^ ")"
+        | _ -> k ^ " : " ^ iter v
       in
-      let s = k ^ " : " ^ vstr in
       if acc = "" then s else acc ^ ", " ^ s)
     env ""
 
-let string_of_value ?(extended_lambda=true) v =
+let string_of_value ?(extended_lambda = true) v =
   let rec iter extended_lambda = function
     | Number n -> "vNumber(" ^ string_of_int n ^ ")"
     | Bool b -> "vBool(" ^ string_of_bool b ^ ")"
     | Id id -> "vId(" ^ id ^ ")"
     | Unit -> "vUnit()"
-    | Pair (v1, v2) -> "vPair(" ^ iter extended_lambda v1 ^ ", " ^ iter extended_lambda v2 ^ ")"
-    | Lambda (v, lst) ->
-        "vLambda(" ^ iter_lambda extended_lambda v lst ^")"
-    | Closure (env, v) ->
-        "vClosure([" ^ string_of_closure env (iter false) ^ "]" ^ "," ^ iter extended_lambda v ^ ")"
+    | Pair (v1, v2) ->
+        "vPair(" ^ iter extended_lambda v1 ^ ", " ^ iter extended_lambda v2
+        ^ ")"
+    | Lambda (v, lst) -> "vLambda(" ^ iter_lambda extended_lambda v lst ^ ")"
+    | Closure (s, env, v) ->
+        "vClosure:" ^ s ^ "(["
+        ^ string_of_closure env (iter false)
+        ^ "]," ^ iter extended_lambda v ^ ")"
     | Builtin b -> "vBuiltin(" ^ string_of_builtin b ^ ")"
     | ScopeBorder -> "vScope_Boarder()"
   and iter_lambda extended_lambda var (body : token list) =
@@ -167,21 +178,15 @@ let string_of_value ?(extended_lambda=true) v =
     ^
     match body with
     | Id id :: Operator Binding :: body -> iter_lambda extended_lambda id body
-    | _ when extended_lambda -> "{"^ string_of_tokenList ~limit:5 body^"}"
+    | _ when extended_lambda -> "{" ^ string_of_tokenList ~limit:10 body ^ "}"
     | _ -> "{...}"
   in
   iter extended_lambda v
 
 let string_of_assign = function
   | Assign (s, v) -> s ^ " : " ^ string_of_value v
-  | ClosureEnv env ->
-      "Env["
-      ^ Hashtbl.fold
-          (fun k v acc ->
-            let s = k ^ " : " ^ string_of_value v in
-            if acc = "" then s else acc ^ ", " ^ s)
-          env ""
-      ^ "]"
+  | ClosureEnv (s, env) ->
+      "Env:" ^ s ^ "[" ^ string_of_closure env string_of_value ^ "]"
   | ScopeBorder -> "{"
 
 let eval_binop lhs rhs = function

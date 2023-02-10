@@ -1,0 +1,33 @@
+return = 
+	r -> cont -> s ->
+		cont $ r $ s;
+bind =
+	m -> f -> cont -> s ->
+		m $ (b -> cont -> s -> f $ b $ cont $ s) $ s $ cont $ s;
+
+get =
+	cont -> s ->
+		cont $ s $ s;
+
+set =
+	s -> cont -> _ ->
+		cont $ () $ s;
+
+run =
+	s -> m ->
+		fst $ (m $ (a -> s -> a,s) $ s);
+
+resa = run $ 0 $ (return $ 1);
+resa
+
+resb = run $ 1 $ (bind $ (return $ 2) $ (x -> return $ (x*2)));
+resb
+
+resc = run $ 0 $ (set $ 1);
+resc
+
+resd = run $ 14 $ get;
+resd
+
+rese = run $ 5 $ (bind $ get $ (x -> set $ (x*5)));
+rese

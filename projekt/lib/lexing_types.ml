@@ -69,14 +69,14 @@ type value =
   | Unit
   | Pair of value * value
   | Lambda of string * TokenSeq.t
-  | Closure of (string, value) Hashtbl.t * value
+  | Closure of string * (string, value) Hashtbl.t * value
   | Builtin of builtin
   | ScopeBorder
 
 module ValueSeq = MySeq.Make (struct
   type elem = value
 
-  let default = Unit
+  let default = ScopeBorder
 end)
 
 type valueList = ValueSeq.t
@@ -84,7 +84,7 @@ type valueList = ValueSeq.t
 
 type assignment =
   | Assign of string * value
-  | ClosureEnv of (string, value) Hashtbl.t
+  | ClosureEnv of string*(string, value) Hashtbl.t
   | ScopeBorder
 
 module AssignSeq = MySeq.Make (struct

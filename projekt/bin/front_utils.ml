@@ -11,7 +11,7 @@ let display_results_detailed v =
     | Pair ((Pair _ as p1), v2) -> Printf.sprintf "(%s),%s" (iter p1) (iter v2)
     | Pair (v1, v2) -> Printf.sprintf "%s,%s" (iter v1) (iter v2)
     | Lambda (var, body) -> "<lambda:" ^ iter_lambda var body ^ ">"
-    | Closure (env, value) -> "<closure:["^ string_of_closure env iter ^ "]:" ^ iter value ^ ">"
+    | Closure (_, env, value) -> "<closure:["^ string_of_closure env iter ^ "]:" ^ iter value ^ ">"
     | Builtin b -> "<builtin:"^string_of_builtin b^">"
     | ScopeBorder -> "<Internal_error>"
   and iter_lambda var (body : token list) =

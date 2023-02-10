@@ -5,6 +5,7 @@ open Logf
 
 module type S = sig
   type 'a t
+  type yard
 
   val bind : 'a t -> ('a -> 'b t) -> 'b t
   val return : 'a -> 'a t
@@ -56,6 +57,8 @@ module type S = sig
 
   val failwith : string -> 'a t
   (** failwith error *)
+
+  val string_of_yard : yard -> string
 end
 
 let string_of_opt_bool = function
@@ -72,7 +75,7 @@ module Yard : S = struct
     value_stack : valueList;
     operator_stack : operatorList;
     assignment_stack : assignment list;
-    token_iterator : tokenList;
+    token_iterator : tokenList list;
   }
 
   include StateMonad.Make (struct
@@ -81,32 +84,28 @@ module Yard : S = struct
 
   let ( let* ) = bind
 
-  let string_of_token_stack =
-    let* { token_iterator; _ } = get in
-    let s = to_string ~fold:false token_iterator string_of_token in
-    return s
+  let string_of_token_list token_iterator =
+    to_string ~fold:No_fold token_iterator string_of_token
 
-  let string_of_value_stack =
-    let* { value_stack; _ } = get in
-    let s = to_string ~line_prefix:"\t " value_stack string_of_value in
-    return s
+  let string_of_token_stack token_iterator =
+    to_string ~line_prefix:"\t " ~fold:Force_fold (List.map string_of_token_list token_iterator)
+      (fun s -> "[" ^ s ^ "]")
 
-  let string_of_assign_stack =
-    let* { assignment_stack; _ } = get in
-    let s = to_string ~line_prefix:"\t " assignment_stack string_of_assign in
-    return s
+  let string_of_value_stack value_stack =
+    to_string ~line_prefix:"\t " value_stack string_of_value
 
-  let string_of_operator_stack =
-    let* { operator_stack; _ } = get in
-    let s = to_string ~line_prefix:"\t " operator_stack string_of_operator in
-    return s
+  let string_of_assign_stack assignment_stack =
+    to_string ~line_prefix:"\t " assignment_stack string_of_assign
 
-  let dump_state =
-    let* token_string = string_of_token_stack in
-    let* value_string = string_of_value_stack in
-    let* assignment_string = string_of_assign_stack in
-    let* operator_string = string_of_operator_stack in
-    logf
+  let string_of_operator_stack operator_stack =
+    to_string ~line_prefix:"\t " operator_stack string_of_operator
+
+  let string_of_yard env =
+    let token_string = string_of_token_stack env.token_iterator in
+    let value_string = string_of_value_stack env.value_stack in
+    let assignment_string = string_of_assign_stack env.assignment_stack in
+    let operator_string = string_of_operator_stack env.operator_stack in
+    Printf.sprintf
       "[Yard]=======================================\n\
        [Yard] State Dump:\n\
        [Yard] Token Stack:     [\n\
@@ -118,8 +117,26 @@ module Yard : S = struct
        [Yard] Assignment Stack:[\n\
        \t %s]\n\
        [Yard]=======================================\n"
-      token_string operator_string value_string assignment_string;
+      token_string operator_string value_string assignment_string
+
+  let dump_state =
+    let* env = get in
+    logf "%s\n" @@ string_of_yard env;
     return ()
+
+  let failwith s =
+    logf "[Yard] Failure: (%s)\n" s;
+    let* () = dump_state in
+    logf "[Yard]  Finishing with failure\n";
+    Printf.eprintf "%s\n" s;
+    log_backtrace ();
+    close_log ();
+    exit 1
+
+  let check_stack_overflow =
+    let* { operator_stack; _ } = get in
+    if List.length operator_stack > 40 then failwith "operator stack overflow\n"
+    else return ()
 
   let rec bind a b =
     let* res =
@@ -136,7 +153,7 @@ module Yard : S = struct
         value_stack = [];
         operator_stack = [];
         assignment_stack = [];
-        token_iterator = lexbuf;
+        token_iterator = [ lexbuf ];
         tiktok = None;
       }
     in
@@ -171,7 +188,7 @@ module Yard : S = struct
   and eval_with (lst, trans) cont =
     logf "[Yard] called eval_with\n";
     let* ({ token_iterator; _ } as env) = get in
-    let* () = set { env with token_iterator = lst } in
+    let* () = set { env with token_iterator = lst :: token_iterator } in
     let* ret = trans () in
     let* env = get in
     let* () = set { env with token_iterator } in
@@ -179,11 +196,13 @@ module Yard : S = struct
 
   and read_token =
     let* ({ token_iterator; _ } as env) = get in
+    let token = TokenSeq.hd @@ List.hd token_iterator in
+    let tail = (TokenSeq.tl @@ List.hd token_iterator) :: (List.tl token_iterator) in
     logf "[Yard] called read_token -> %s\n"
-    @@ string_of_token @@ TokenSeq.hd token_iterator;
+    @@ string_of_token  token;
     let* () = dump_state in
-    let* () = set { env with token_iterator = TokenSeq.tl token_iterator } in
-    return @@ TokenSeq.hd token_iterator
+    let* () = set { env with token_iterator = tail } in
+    return token
 
   and push_value x =
     let* ({ value_stack; _ } as env) = get in
@@ -193,6 +212,7 @@ module Yard : S = struct
   and push_op op =
     let* ({ operator_stack; _ } as env) = get in
     logf "[Yard] called push_op with %s\n" @@ string_of_operator op;
+    let* () = check_stack_overflow in
     set { env with operator_stack = op :: operator_stack; tiktok = Some false }
 
   and push_assign assign =
@@ -235,14 +255,6 @@ module Yard : S = struct
 
   and peek_token =
     let* { token_iterator; _ } = get in
-    return @@ TokenSeq.hd token_iterator
-
-  and failwith s =
-    logf "[Yard] Failure: (%s)\n" s;
-    let* () = dump_state in
-    logf "[Yard]  Finishing with failure\n";
-    Printf.eprintf "%s\n" s;
-    log_backtrace ();
-    close_log ();
-    exit 1
+    let token = TokenSeq.hd @@ List.hd token_iterator in
+    return token
 end

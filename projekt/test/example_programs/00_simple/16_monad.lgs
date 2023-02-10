@@ -1,22 +1,15 @@
 return = 
-	x -> cont ->
-		cont $ x;
+	v -> cont ->
+		cont $ v;
 bind =
-	m -> f -> cont -> 
-		m $ (x -> f $ x $ cont);
-
-get =
-	cont -> s ->
-		cont $ s $ s;
-
-set =
-	s -> cont -> _ ->
-		cont $ () $ s;
-
+	m -> f -> cont ->
+		m $ (x -> cont -> f $ x $ cont) $ cont;
 run =
-	s -> m ->
-		fst $ (m $ (a -> s -> a,s) $ s);
+	m ->
+		m $ (a -> a);
 
-e = c -> bind $ c $ (x -> set $ (x*5));
+res = run $ (return $ 1)
+res
 
-run $ 5 $ (e $ get)
+res = run $ (bind $ (return $ 2) $ (y -> return $ (y*2)));
+res

@@ -1,6 +1,7 @@
 (executable
  (public_name projekt)
  (name main)
+ (modes byte exe)
  (libraries projekt getopts))
 
 (env

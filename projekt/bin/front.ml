@@ -38,7 +38,10 @@ let eval_string s =
 let rec repl () =
   Printf.printf "#";
   let line = try read_line () with End_of_file -> "exit" in
-  if line = "exit" || line = "quit" then Printf.printf "\n" else repl ()
+  if line = "exit" || line = "quit" then Printf.printf "\n"
+  else (
+    eval_string line;
+    repl ())
 
 let eval_files files =
   let f () arg =
