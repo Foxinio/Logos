@@ -3,7 +3,7 @@ return =
 		cont $ v;
 bind =
 	m -> f -> cont ->
-		m $ (x -> cont -> f $ x $ cont) $ cont;
+		m $ ((cont -> x -> f $ x $ cont) $ cont);
 run =
 	m ->
 		m $ (a -> a);

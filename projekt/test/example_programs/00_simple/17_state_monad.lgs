@@ -3,7 +3,7 @@ return =
 		cont $ r $ s;
 bind =
 	m -> f -> cont -> s ->
-		m $ (b -> cont -> s -> f $ b $ cont $ s) $ s $ cont $ s;
+		m $ ((cont -> b -> s -> f $ b $ cont $ s) $ cont) $ s;
 
 get =
 	cont -> s ->
@@ -15,13 +15,13 @@ set =
 
 run =
 	s -> m ->
-		fst $ (m $ (a -> s -> a,s) $ s);
+		snd $ (m $ (a -> s -> a,s) $ s);
 
-resa = run $ 0 $ (return $ 1);
-resa
+res = run $ 0 $ (return $ 1);
+((a->a)$res)
 
-resb = run $ 1 $ (bind $ (return $ 2) $ (x -> return $ (x*2)));
-resb
+res = run $ 1 $ (bind $ (return $ 2) $ (x -> return $ (x*2)));
+((a->a)$res)
 
 resc = run $ 0 $ (set $ 1);
 resc
