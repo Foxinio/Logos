@@ -410,7 +410,7 @@ end = struct
             let env = Hashtbl.create 7 in
             logf
               "[Shunting_yard:eval_op:Apply:Lambda] building clo<%s> with [%s \
-               : %s]\n"
+               = %s]\n"
               var var (string_of_value rhs);
             Hashtbl.add env var rhs;
             logf "[Shunting_yard:eval_op:Apply:Lambda] env after: [%s]\n"
@@ -420,7 +420,7 @@ end = struct
             let env = Hashtbl.copy env in
             logf
               "[Shunting_yard:eval_op:Apply:Closure] extending env of clo<%s> \
-               by [%s : %s]\n"
+               by [%s = %s]\n"
               s var (string_of_value rhs);
             Hashtbl.replace env var rhs;
             logf "[Shunting_yard:eval_op:Apply:Closure] env after: [%s]\n"
