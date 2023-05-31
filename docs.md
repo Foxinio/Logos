@@ -39,7 +39,7 @@ bool-expr :=
 arthm-expr :=
 	| expr "+" expr
 	| expr "-" expr
-	| expr "*" expr
+	| expr "\*" expr
 	| expr "/" expr
 	| expr "%" expr
 	| var
