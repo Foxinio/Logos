@@ -491,6 +491,7 @@ end = struct
     let* assign = Yard.pop_assign in
     match assign with
     | ClosureEnv _ -> Yard.return ()
+    | EndOfStack -> Yard.failwith @@ Errors.reportTryingToCloseUnopenedScope
     | _ ->
         let* () = remove_closure_env () in
         Yard.push_assign assign
@@ -508,7 +509,7 @@ end = struct
         let pred = function
           | Assign (s, v) when s = id -> Some v
           | ClosureEnv (_, env) -> Hashtbl.find_opt env id
-          | Assign _ -> None
+          | Assign _ | EndOfStack
           | ScopeBorder -> None
         in
         match List.find_map pred assignment_stack with
@@ -516,7 +517,7 @@ end = struct
             logf "[Shunting_yard:deref_val] deref_val evaluated %s to %s\n" id
               (string_of_value v);
             Yard.return v
-        | None -> Yard.failwith ("Referenced undefined variable: " ^ id))
+        | None -> Yard.failwith @@ Errors.reportReferenceOfUndefinedVariables id)
     | _ -> Yard.return var
 
   and close_bracket () =
@@ -590,6 +591,7 @@ end = struct
         let* () = close_scope () in
         Yard.push_assign assign
     | Assign _ -> close_scope ()
+    | EndOfStack -> Yard.failwith @@ Errors.reportTryingToCloseUnopenedScope
 
   and handle_semicolon () =
     logf "[Shunting_yard] called handle_semicolon\n";

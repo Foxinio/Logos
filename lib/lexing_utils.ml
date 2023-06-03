@@ -185,6 +185,7 @@ let string_of_value ?(extended_lambda = true) v =
 
 let string_of_assign = function
   | Assign (s, v) -> s ^ " : " ^ string_of_value v
+  | EndOfStack -> "EndOfStack"
   | ClosureEnv (s, env) ->
       "Env:" ^ s ^ "[" ^ string_of_closure env string_of_value ^ "]"
   | ScopeBorder -> "{"

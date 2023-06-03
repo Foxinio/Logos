@@ -86,11 +86,12 @@ type assignment =
   | Assign of string * value
   | ClosureEnv of string*(string, value) Hashtbl.t
   | ScopeBorder
+  | EndOfStack
 
 module AssignSeq = MySeq.Make (struct
   type elem = assignment
 
-  let default = ScopeBorder
+  let default = EndOfStack
 end)
 
 type assignList = AssignSeq.t

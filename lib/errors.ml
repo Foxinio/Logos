@@ -28,3 +28,9 @@ let reportUnclosedBracketWhileFolding =
 
 let reportDivisionByZero =
     "Execution Error: Division by zero"
+
+let reportTryingToCloseUnopenedScope =
+    "Syntax Error: Unexpected Scope Closing bracket"
+
+let reportReferenceOfUndefinedVariables id =
+    "Referenced undefined variable: " ^ id
