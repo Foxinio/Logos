@@ -17,7 +17,7 @@ let lexer_to_list lexbuf =
   in
   iter []
 
-let eval_file channel =
+let eval_file env channel =
   let lexbuf = Lexing.from_channel channel in
   let printer =
     if !Opts.print_detail then display_results_detailed else display_results
@@ -27,50 +27,49 @@ let eval_file channel =
     Printf.printf "[[Lexing]]\n";
     to_string lexed string_of_token;
     Printf.printf "[[END]]\n");
-  let res = Shunting_yard.run lexed in
-  to_string res printer
+  let (res, env) = Shunting_yard.run_with_env lexed env in
+  to_string res printer;
+  env
 
-let eval_string s =
+let eval_string env s =
   let lexed = lexer_to_list @@ Lexing.from_string s in
-  let res = Shunting_yard.run lexed in
-  to_string res display_results
+  let (res, env) = Shunting_yard.run_with_env lexed env in
+  to_string res display_results;
+  env
 
-let rec repl () =
+let rec repl env =
   Printf.printf "#";
   let line = try read_line () with End_of_file -> "exit" in
   if line = "exit" || line = "quit" then Printf.printf "\n"
   else (
-    eval_string line;
-    repl ())
+    let env = eval_string env line in
+    repl env)
 
-let eval_files files =
-  let f () arg =
+let eval_files env files =
+  let f env arg =
     try
       let channel = open_in arg in
       Printf.printf "%s:\n" arg;
-      eval_file channel
+      eval_file env channel
     with
-    | Sys_error s -> Printf.eprintf "%s\n%!" s
-    | exc -> Printf.eprintf "Other error: %s" @@ Printexc.to_string exc
+    | Sys_error s -> Printf.eprintf "%s\n%!" s; []
+    | exc -> Printf.eprintf "Other error: %s" @@ Printexc.to_string exc; []
   in
-  List.fold_left f () !Opts.files
+  List.fold_left f env !Opts.files
 
 let eval () =
-  let b =
+  let env =
     if List.length !Opts.to_eval > 0 then (
-      List.fold_left (fun () expr -> eval_string expr) () !Opts.to_eval;
-      true)
-    else false
+        List.fold_left (fun env expr -> eval_string env expr) [] !Opts.to_eval)
+    else []
   in
-  let b =
+  let env, b =
     let len = List.length !Opts.files in
     if len = 1 then (
-      (try eval_file @@ open_in @@ List.hd !Opts.files
-       with Sys_error s -> Printf.eprintf "%s\n%!" s);
-      true)
+      (try eval_file env @@ open_in @@ List.hd !Opts.files
+      with Sys_error s -> Printf.eprintf "%s\n%!" s; []), true)
     else if len > 1 then (
-      eval_files !Opts.files;
-      true)
-    else b
+      eval_files env !Opts.files, true)
+    else env, false
   in
-  if not b then repl ()
+  if not b then repl env

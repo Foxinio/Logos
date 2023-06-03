@@ -13,7 +13,7 @@ module type S = sig
   val eval_with : tokenList * (unit -> 'a t) -> ('a -> 'b t) -> 'b t
   (** pass tokenList and function to execute with it, then recover previous state *)
 
-  val init : tokenList -> 'a t -> 'a
+  val init : tokenList -> assignList -> 'a t -> 'a
   (** start monad with tokenList *)
 
   val read_token : token t
@@ -147,12 +147,12 @@ module Yard : S = struct
     in
     b res
 
-  and init lexbuf eval =
+  and init lexbuf env eval =
     let env =
       {
         value_stack = [];
         operator_stack = [];
-        assignment_stack = [];
+        assignment_stack = env;
         token_iterator = [ lexbuf ];
         tiktok = None;
       }

@@ -1,0 +1,14 @@
+res = run $ 0 $ (return $ 1);
+((a->a)$res)
+
+res = run $ 1 $ (bind $ (return $ 2) $ (x -> return $ (x*2)));
+((a->a)$res)
+
+resc = run $ 0 $ (set $ 1);
+resc
+
+resd = run $ 14 $ get;
+resd
+
+rese = run $ 5 $ (bind $ get $ (x -> set $ (x*5)));
+rese

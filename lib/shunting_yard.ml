@@ -3,7 +3,8 @@ open Lexing_types
 open Logf
 
 module Make (Yard : Yard_state_monad.S) : sig
-  val run : tokenList -> valueList
+  val run : tokenList -> (valueList * assignList)
+  val run_with_env : tokenList -> assignList -> (valueList * assignList)
 end = struct
   let ( let* ) = Yard.bind
   let ( let+ ) = Yard.eval_with
@@ -135,13 +136,40 @@ end = struct
     in
     mapper [] lst
 
-  let rec run lst =
+  exception Error of string
+
+  let rec filter_assigns assignStack =
+      let fn = function
+          | Assign (_, (Closure _)) -> true
+          | ClosureEnv _ -> false
+          | ScopeBorder -> raise @@ Error (Errors.reportUnexpectedEOF @@ Some(string_of_operator CloseScope))
+          | _ -> false
+      in
+      try
+        List.filter fn assignStack
+            |> List.sort_uniq (fun a b ->
+                match a,b with
+                | Assign (ida, _), Assign (idb, _) -> String.compare ida idb
+                | _ -> raise @@ Error "Unexpected token on assignment stack")
+            |> Yard.return
+      with
+        | Error msg -> Yard.failwith msg
+
+
+  let rec run_with_env lst env =
+    logf "[Shunting_yard] called run\n";
     let eval =
       let* () = eval () in
-      let* stack = Yard.value_stack in
-      rev_map deref_val stack
+      let* value_stack = Yard.value_stack in
+      let* assign_stack = Yard.assignment_stack in
+      let* derefed = rev_map deref_val value_stack in
+      let* filtered = filter_assigns assign_stack in
+      Yard.return (derefed, filtered)
     in
-    Yard.init lst eval
+    Yard.init lst env eval
+
+  and run lst =
+      run_with_env lst []
 
   and eval_iter () =
     logf "[Shunting_yard] called eval_iter\n";
@@ -237,15 +265,12 @@ end = struct
         let* () =
           match b with
           | Readc ->
-              (* TODO: Implement reading from stdin *)
-              (* For now always returns zero        *)
               let res = Scanf.scanf "%c" (fun c -> Number (int_of_char c)) in
               logf "[Shunting_yard:eval_builtin] evaling Readc -> %s\n"
               @@ string_of_value res;
               Yard.push_value res
           | _ -> Yard.push_value @@ Builtin b
         in
-        (* let* () = Yard.set_tiktok false in *)
         eval_iter ()
     | EOF, Some false -> Yard.failwith @@ Errors.reportUnexpectedEOF None
     | EOF, _ -> Yard.return ()
