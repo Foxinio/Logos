@@ -28,5 +28,6 @@ Order of passed filese determines what definitions are visible at which point of
 
 ## Future Plans
 [x] Make environment persistant - evaluated identifiers stay visible to code evaluated after them.
+
 [ ] Implement module system - keyword import/include <module-name/path> that finds file, 
     evaluates it and appends definition to assignment stack.
